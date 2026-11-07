@@ -4,12 +4,14 @@ import { PARTS } from './config.js';
 
 // base = rpm perkiraan saat rekaman dibuat (pitch normal), c = titik tengah lapisan pada skala rpm
 const LAYERS = [
-  { id: 'idle', url: 'assets/idle.mp3', base: 1100, c: 1100 },
-  { id: 'langsam', url: 'assets/lang1.mp3', base: 1500, c: 1900 },
-  { id: 'dikit', url: 'assets/lang2.mp3', base: 3200, c: 3200 },
-  { id: 'jalan', url: 'assets/run.mp3', base: 5600, c: 5000 },
-  { id: 'tengah', url: 'assets/mid.mp3', base: 6600, c: 7000 },
-  { id: 'atas', url: 'assets/high.mp3', base: 11000, c: 9800 },
+  // Mode 1: rekaman awal (idle + saat jalan)
+  { id: 'idle', mode: 1, url: 'assets/idle.mp3', base: 1100, c: 1100 },
+  { id: 'jalan', mode: 1, url: 'assets/run.mp3', base: 5600, c: 5000 },
+  // Mode 2: rekaman langsam → gas dikit → tengah → atas
+  { id: 'langsam', mode: 2, url: 'assets/lang1.mp3', base: 1500, c: 1500 },
+  { id: 'dikit', mode: 2, url: 'assets/lang2.mp3', base: 3200, c: 3200 },
+  { id: 'tengah', mode: 2, url: 'assets/mid.mp3', base: 6600, c: 7000 },
+  { id: 'atas', mode: 2, url: 'assets/high.mp3', base: 11000, c: 9800 },
 ];
 const LUMPY_PATTERN = [0, 0.7, 0.15, 0.9, 0.05, 0.55, 0.3, 0.85]; // pola "kuda berlari"
 
@@ -17,13 +19,15 @@ function smooth(a, b, x) { const t = Math.min(1, Math.max(0, (x - a) / (b - a)))
 function curve(k) { const n = 512, c = new Float32Array(n); for (let i = 0; i < n; i++) { const x = i * 2 / n - 1; c[i] = k < 0.01 ? x : Math.tanh(x * (1 + k * 9)) / Math.tanh(1 + k * 9); } return c; }
 
 // bobot lapisan menurut rpm (segitiga pada skala log, jumlah daya = 1)
-export function layerWeights(rpm) {
-  const w = new Array(LAYERS.length).fill(0); const n = LAYERS.length;
-  if (rpm <= LAYERS[0].c) { w[0] = 1; return w; }
-  if (rpm >= LAYERS[n - 1].c) { w[n - 1] = 1; return w; }
-  for (let i = 0; i < n - 1; i++) {
-    const a = LAYERS[i].c, b = LAYERS[i + 1].c;
-    if (rpm >= a && rpm <= b) { const f = Math.log(rpm / a) / Math.log(b / a); w[i] = Math.cos(f * Math.PI / 2); w[i + 1] = Math.sin(f * Math.PI / 2); break; }
+export function layerWeights(rpm, mode = 1) {
+  const w = new Array(LAYERS.length).fill(0);
+  const idx = LAYERS.map((l, i) => (l.mode === mode ? i : -1)).filter((i) => i >= 0);
+  const n = idx.length; const C = (k) => LAYERS[idx[k]].c;
+  if (rpm <= C(0)) { w[idx[0]] = 1; return w; }
+  if (rpm >= C(n - 1)) { w[idx[n - 1]] = 1; return w; }
+  for (let k = 0; k < n - 1; k++) {
+    const a = C(k), b = C(k + 1);
+    if (rpm >= a && rpm <= b) { const f = Math.log(rpm / a) / Math.log(b / a); w[idx[k]] = Math.cos(f * Math.PI / 2); w[idx[k + 1]] = Math.sin(f * Math.PI / 2); break; }
   }
   return w;
 }
@@ -117,7 +121,7 @@ export class EngineAudio {
     // lapisan: bobot dari rpm, level dari bukaan gas (gas pas = suara pas)
     const vol = sp.volume * ex.gain;
     const load = 0.55 + 0.45 * thr;                      // gas dilepas → lebih pelan
-    const w = layerWeights(rpm);
+    const w = layerWeights(rpm, setup.ecu.soundMode === 2 ? 2 : 1);
     this.layers.forEach((L, i) => {
       const rate = Math.min(2.6, Math.max(0.5, rpm / L.base)) * pitchMul * lumpRate;
       L.s.playbackRate.setTargetAtTime(rate, t, 0.03);

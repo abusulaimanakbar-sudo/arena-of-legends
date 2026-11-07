@@ -108,6 +108,7 @@ function ecuHtml() {
   h += `<div class="note" id="afrNote">${afrNote(e.afr)}</div>`;
   h += slider('idle', 'RPM Idle', e.idle, L.idle.min, L.idle.max, L.idle.step, L.idle.unit, 'ecu');
   h += slider('limit', 'Pembatas Putaran (Limiter)', e.limit, L.limit.min, L.limit.max, L.limit.step, L.limit.unit, 'ecu');
+  h += `<div class="grp"><h3>Mode Suara ECU</h3><p>Pilih paket rekaman yang dipakai ECU. Tiap mode berdiri sendiri (tidak dicampur).</p><div class="opts"><button class="opt ${e.soundMode !== 2 ? 'sel' : ''}" data-mode="1"><span>Mode 1 — Idle + Jalan</span><small>rekaman awal</small></button><button class="opt ${e.soundMode === 2 ? 'sel' : ''}" data-mode="2"><span>Mode 2 — Langsam → Gas Dikit → Tengah → Atas</span><small>4 tahap</small></button></div></div>`;
   h += `<label class="chk"><input type="checkbox" id="chkPops" ${e.pops ? 'checked' : ''}> Aktifkan letupan knalpot (pop & crackle) saat gas dilepas</label></div>`;
   return h;
 }
@@ -115,7 +116,7 @@ const timingNote = (d) => d > 7 ? '⚠ Timing terlalu maju: ngelitik (knocking),
 const afrNote = (a) => a < 11.6 ? 'Terlalu kaya: boros, asap hitam, tenaga turun.' : a > 14 ? '⚠ Kurus: panas, tenaga turun, letupan di knalpot.' : a >= 12.4 && a <= 13.2 ? '✓ Campuran tenaga maksimal.' : 'Aman, sedikit di luar titik optimum.';
 function soundHtml() {
   const s = setup.sound;
-  let h = `<div class="grp"><h3>Karakter Suara Mesin (via ECU)</h3><p>Dibangun dari rekaman asli berlapis (idle → langsam → gas dikit → jalan → tengah → atas) yang bergeser mulus mengikuti RPM &amp; gas, lalu diolah. Pilih preset atau atur sendiri — preset <b>Timing Kuda</b> membuat idle bergelombang seperti derap kuda.</p><div class="opts">`;
+  let h = `<div class="grp"><h3>Karakter Suara Mesin (via ECU)</h3><p>Memakai rekaman asli sesuai <b>Mode Suara</b> yang dipilih di tab ECU, lalu diolah. Pilih preset atau atur sendiri — preset <b>Timing Kuda</b> membuat idle bergelombang seperti derap kuda.</p><div class="opts">`;
   h += Object.entries(SOUND_PRESETS).map(([id, o]) => `<button class="opt ${setup.soundPreset === id ? 'sel' : ''}" data-sp="${id}"><span>${o.name}</span></button>`).join('');
   h += '</div></div><div class="grp"><h3>Atur Manual</h3>';
   h += slider('pitch', 'Nada (pitch)', s.pitch, -6, 8, 0.5, ' st', 'sound');
@@ -135,6 +136,8 @@ function soundHtml() {
 $('panel').addEventListener('click', (e) => {
   const sp = e.target.closest('[data-sp]');
   if (sp) { const id = sp.dataset.sp; setup.soundPreset = id; if (id !== 'custom') setup.sound = { ...SOUND_PRESETS[id] }; refreshAll(); renderPanel(); startAudio(); return; }
+  const md = e.target.closest('[data-mode]');
+  if (md) { setup.ecu.soundMode = +md.dataset.mode; save(); renderPanel(); startAudio(); revPulse = 1.5; return; }
   const b = e.target.closest('[data-k]'); if (!b) return;
   setup[b.dataset.k] = b.dataset.v;
   if (b.dataset.k === 'roller' || b.dataset.k === 'spring') { /* tidak perlu rebuild */ }
