@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Vario 150 LED — Garage & Racing Simulator</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div id="loading"><div class="box"><h1>VARIO 150 LED</h1><p>Menyiapkan garasi &amp; suara mesin…</p><div class="bar"><i></i></div></div></div>
+
+<header id="top">
+  <div class="brand">VARIO<b>150</b> <small>LED NEW · Garage Sim</small></div>
+  <nav>
+    <button id="btnGarage" class="on">🔧 Garasi</button>
+    <button id="btnDrive">🏁 Tes Jalan</button>
+    <button id="btnMute" title="Suara">🔊</button>
+  </nav>
+</header>
+
+<!-- GARASI -->
+<aside id="garage">
+  <div class="tabs" id="tabs"></div>
+  <div class="panel" id="panel"></div>
+  <div class="foot">
+    <button id="btnReset" class="ghost">Reset standar</button>
+    <button id="btnGo" class="go">▶ Tes Jalan Sekarang</button>
+  </div>
+</aside>
+
+<section id="stats">
+  <div class="kpis" id="kpis"></div>
+  <canvas id="dyno" width="420" height="170"></canvas>
+  <div class="legend"><span class="hp">■ Tenaga (HP)</span><span class="nm">■ Torsi (Nm)</span><span class="st">┄ Standar</span></div>
+</section>
+
+<div id="revbox">
+  <button id="revBtn">🔔 TAHAN UNTUK GAS (tes suara)</button>
+  <small>Spasi / tahan tombol · putar motor: seret mouse · scroll = zoom</small>
+</div>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <canvas id="tach" width="300" height="300"></canvas>
+  <div class="speed"><span id="spd">0</span><small>km/h</small></div>
+  <div class="gear" id="rpmTxt">1500 rpm</div>
+  <div class="times">
+    <div>LAP <b id="lap">1</b></div>
+    <div>Waktu <b id="tLap">0:00.0</b></div>
+    <div>Terbaik <b id="tBest">--</b></div>
+    <div>0–100 <b id="t100">--</b></div>
+    <div id="flash"></div>
+  </div>
+  <div class="helper">W/↑ gas · S/↓/Spasi rem · A D / ←→ belok · C kamera · R reset · G garasi</div>
+  <div id="msg"></div>
+  <div class="touch" id="touch">
+    <button id="tL">◀</button><button id="tR">▶</button>
+    <button id="tBrake">REM</button><button id="tGas">GAS</button>
+  </div>
+</div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
