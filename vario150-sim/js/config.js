@@ -106,7 +106,7 @@ export const ECU_LIMITS = {
 export const DEFAULT_SETUP = {
   color: 'white', disp: '150', cam: 'stock', tb: '28', air: 'stock', exhaust: 'stock',
   roller: '10', spring: 'stock', tire: 'stock', weight: 'stock',
-  ecu: { timing: 27, afr: 12.8, idle: 1500, limit: 9500, pops: true, soundMode: 1 },
+  ecu: { timing: 27, afr: 12.8, idle: 1500, limit: 9500, pops: false, soundMode: 1, volume: 1.2 },
   soundPreset: 'stock',
   sound: { ...SOUND_PRESETS.stock },
 };

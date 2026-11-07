@@ -59,7 +59,6 @@ const TABS = [
   { id: 'engine', label: '⚙ Mesin', parts: ['disp', 'cam', 'tb', 'air'] },
   { id: 'exhaust', label: '💨 Knalpot & CVT', parts: ['exhaust', 'roller', 'spring'] },
   { id: 'ecu', label: '🖥 ECU' },
-  { id: 'sound', label: '🔊 Suara' },
   { id: 'look', label: '🎨 Tampilan', parts: ['color', 'tire', 'weight'] },
 ];
 let tab = 'engine';
@@ -83,7 +82,6 @@ function renderPanel() {
     h += `<div class="grp"><h3>${P.label}</h3><p>${P.hint}</p><div class="opts">${Object.entries(P.options).map(([id, o]) => `<button class="opt ${setup[k] === id ? 'sel' : ''}" data-k="${k}" data-v="${id}"><span>${o.name}</span><small>${optInfo(k, o)}</small></button>`).join('')}</div></div>`;
   }
   if (tab === 'ecu') h += ecuHtml();
-  if (tab === 'sound') h += soundHtml();
   p.innerHTML = h; p.scrollTop = scroll;
 }
 function optInfo(k, o) {
@@ -109,7 +107,8 @@ function ecuHtml() {
   h += slider('idle', 'RPM Idle', e.idle, L.idle.min, L.idle.max, L.idle.step, L.idle.unit, 'ecu');
   h += slider('limit', 'Pembatas Putaran (Limiter)', e.limit, L.limit.min, L.limit.max, L.limit.step, L.limit.unit, 'ecu');
   h += `<div class="grp"><h3>Mode Suara ECU</h3><p>Pilih paket rekaman yang dipakai ECU. Tiap mode berdiri sendiri (tidak dicampur).</p><div class="opts"><button class="opt ${e.soundMode !== 2 ? 'sel' : ''}" data-mode="1"><span>Mode 1 — Idle + Jalan</span><small>rekaman awal</small></button><button class="opt ${e.soundMode === 2 ? 'sel' : ''}" data-mode="2"><span>Mode 2 — Langsam → Gas Dikit → Tengah → Atas</span><small>4 tahap</small></button></div></div>`;
-  h += `<label class="chk"><input type="checkbox" id="chkPops" ${e.pops ? 'checked' : ''}> Aktifkan letupan knalpot (pop & crackle) saat gas dilepas</label></div>`;
+  h += slider('volume', 'Volume Suara', e.volume ?? 1.2, 0.3, 2.5, 0.1, '×', 'ecu');
+  h += '</div>';
   return h;
 }
 const timingNote = (d) => d > 7 ? '⚠ Timing terlalu maju: ngelitik (knocking), tenaga drop, mesin panas.' : d < -6 ? 'Timing terlalu mundur: tarikan loyo, panas di knalpot.' : Math.abs(d) <= 2 ? '✓ Mendekati timing optimal untuk konfigurasi ini.' : 'Mendekati batas — cek di dyno.';
@@ -147,11 +146,10 @@ $('panel').addEventListener('click', (e) => {
 });
 $('panel').addEventListener('input', (e) => {
   const t = e.target;
-  if (t.id === 'chkPops') { setup.ecu.pops = t.checked; refreshAll(); return; }
-  if (t.type !== 'range') return;
+    if (t.type !== 'range') return;
   const g = t.dataset.g, id = t.dataset.id, v = parseFloat(t.value);
   if (g === 'ecu') setup.ecu[id] = v; else { setup.sound[id] = v; setup.soundPreset = 'custom'; }
-  const step = parseFloat(t.step); $(`v-${g}-${id}`).textContent = v.toFixed(step < 1 ? (step < 0.1 ? 2 : 1) : 0) + (g === 'ecu' ? ECU_LIMITS[id].unit : ({ pitch: ' st', bass: ' dB', res: ' Hz' }[id] || ''));
+  const step = parseFloat(t.step); $(`v-${g}-${id}`).textContent = v.toFixed(step < 1 ? (step < 0.1 ? 2 : 1) : 0) + (g === 'ecu' ? (ECU_LIMITS[id] ? ECU_LIMITS[id].unit : '×') : ({ pitch: ' st', bass: ' dB', res: ' Hz' }[id] || ''));
   eng = engineModel(setup);
   if (g === 'ecu') { if ($('timingNote')) $('timingNote').textContent = timingNote(setup.ecu.timing - eng.timingOpt); if ($('afrNote')) $('afrNote').textContent = afrNote(setup.ecu.afr); }
   save(); renderStats(); startAudio();
@@ -266,7 +264,7 @@ function updateGarage(dt) {
   garageRpm += (tgt - garageRpm) * Math.min(1, dt * (rev ? 3.2 : 2.2));
   if (rev && garageRpm > setup.ecu.limit) garageRpm = setup.ecu.limit;
   const lim = rev && garageRpm >= setup.ecu.limit - 5;
-  audio.update(dt, { rpm: garageRpm, throttle: thr, speed: 0, setup, eng, limiter: lim, garage: true });
+  audio.update(dt, { rpm: garageRpm, throttle: thr, setup });
   if (orbit.auto) orbit.az += dt * 0.25;
   const target = new THREE.Vector3(0, 0.5, 0);
   camera.position.set(Math.sin(orbit.az) * Math.cos(orbit.el) * orbit.dist, 0.4 + Math.sin(orbit.el) * orbit.dist, Math.cos(orbit.az) * Math.cos(orbit.el) * orbit.dist);
@@ -296,7 +294,7 @@ function updateDrive(dt) {
   for (let i = 0; i < steps; i++) stepBike(ps, inp, eng, setup, h, surface);
   // pagar pembatas
   if (nr.dist > half + 3.6) {
-    const over = nr.dist - (half + 3.6); const sgn = Math.sign(nr.side); ps.x -= world.norm[nr.i].x * sgn * over; ps.z -= world.norm[nr.i].z * sgn * over; if (ps.v > 3) { say('TABRAK!', 600); audio.pop && audioStarted && audio.ready && audio.pop(1.4); } ps.v *= 0.35;
+    const over = nr.dist - (half + 3.6); const sgn = Math.sign(nr.side); ps.x -= world.norm[nr.i].x * sgn * over; ps.z -= world.norm[nr.i].z * sgn * over; if (ps.v > 3) { say('TABRAK!', 600); } ps.v *= 0.35;
   }
   // lap & waktu
   const I = nr.i;
@@ -335,7 +333,7 @@ function updateDrive(dt) {
   camera.lookAt(look); camera.fov = 52 + Math.min(18, ps.v * 0.35); camera.updateProjectionMatrix();
 
   // suara
-  audio.update(dt, { rpm: ps.rpm, throttle: inp.thr ? 1 : ps.thr, speed: ps.v, setup, eng, limiter: ps.limiter, garage: false });
+  audio.update(dt, { rpm: ps.rpm, throttle: inp.thr ? 1 : ps.thr, setup });
   // HUD
   uiAcc += dt; if (uiAcc > 0.03) { uiAcc = 0; $('spd').textContent = Math.round(kmh); $('rpmTxt').textContent = `${Math.round(ps.rpm / 10) * 10} rpm · CVT ${(ps.G / (9 * 0.88 * 1)).toFixed(2)}:1`; $('lap').textContent = lap.n; $('tLap').textContent = fmt(lap.t); drawTach(ps.rpm, setup.ecu.limit, ps.limiter); }
 }
