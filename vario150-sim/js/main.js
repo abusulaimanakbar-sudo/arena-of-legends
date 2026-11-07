@@ -210,7 +210,7 @@ $('btnGarage').onclick = () => setMode('garage'); $('btnDrive').onclick = () => 
 $('btnReset').onclick = () => { setup = cloneSetup(DEFAULT_SETUP); refreshAll(true); renderPanel(); };
 
 // ---------- balap ----------
-const lap = { n: 1, t: 0, best: +localStorage.getItem('vario150-best') || 0, last: 0, maxI: 0, prevI: 0, started: false };
+const lap = { n: 1, t: 0, best: (() => { try { return +localStorage.getItem('vario150-best') || 0; } catch (e) { return 0; } })(), last: 0, maxI: 0, prevI: 0, started: false };
 const t100 = { t: 0, running: false, done: null };
 function resetRide() {
   ps = newState(world.start.pos.x + world.norm[0].x * 2, world.start.pos.z + world.norm[0].z * 2, world.start.heading, eng.idleRpm);
@@ -298,7 +298,7 @@ function updateDrive(dt) {
   const I = nr.i;
   if (ps.v > 0.5 || lap.started) { lap.started = true; lap.t += dt; }
   if (lap.prevI > world.n * 0.85 && I < world.n * 0.15 && lap.maxI > world.n * 0.6) {
-    lap.last = lap.t; if (!lap.best || lap.t < lap.best) { lap.best = lap.t; localStorage.setItem('vario150-best', lap.t); $('flash').textContent = 'REKOR BARU!'; } else $('flash').textContent = 'Lap ' + fmt(lap.t);
+    lap.last = lap.t; if (!lap.best || lap.t < lap.best) { lap.best = lap.t; try { localStorage.setItem('vario150-best', lap.t); } catch (e) { /* abaikan */ } $('flash').textContent = 'REKOR BARU!'; } else $('flash').textContent = 'Lap ' + fmt(lap.t);
     $('tBest').textContent = fmt(lap.best); lap.n++; lap.t = 0; lap.maxI = 0; setTimeout(() => ($('flash').textContent = ''), 3500);
   }
   if (I > lap.maxI && I - lap.prevI < 60) lap.maxI = I; lap.prevI = I;
