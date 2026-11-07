@@ -115,8 +115,9 @@ const timingNote = (d) => d > 7 ? '⚠ Timing terlalu maju: ngelitik (knocking),
 const afrNote = (a) => a < 11.6 ? 'Terlalu kaya: boros, asap hitam, tenaga turun.' : a > 14 ? '⚠ Kurus: panas, tenaga turun, letupan di knalpot.' : a >= 12.4 && a <= 13.2 ? '✓ Campuran tenaga maksimal.' : 'Aman, sedikit di luar titik optimum.';
 function soundHtml() {
   const s = setup.sound;
-  let h = `<div class="grp"><h3>Karakter Suara Mesin (via ECU)</h3><p>Dibangun dari 2 rekaman asli (idle & jalan) lalu diolah. Pilih preset atau atur sendiri — preset <b>Timing Kuda</b> membuat idle bergelombang seperti derap kuda.</p><div class="opts">`;
-  h += Object.entries(SOUND_PRESETS).map(([id, o]) => `<button class="opt ${setup.soundPreset === id ? 'sel' : ''}" data-sp="${id}"><span>${o.name}</span></button>`).join('') + '</div></div><div class="grp"><h3>Atur Manual</h3>';
+  let h = `<div class="grp"><h3>Karakter Suara Mesin (via ECU)</h3><p>Dibangun dari rekaman asli berlapis (idle → langsam → gas dikit → jalan → tengah → atas) yang bergeser mulus mengikuti RPM &amp; gas, lalu diolah. Pilih preset atau atur sendiri — preset <b>Timing Kuda</b> membuat idle bergelombang seperti derap kuda.</p><div class="opts">`;
+  h += Object.entries(SOUND_PRESETS).map(([id, o]) => `<button class="opt ${setup.soundPreset === id ? 'sel' : ''}" data-sp="${id}"><span>${o.name}</span></button>`).join('');
+  h += '</div></div><div class="grp"><h3>Atur Manual</h3>';
   h += slider('pitch', 'Nada (pitch)', s.pitch, -6, 8, 0.5, ' st', 'sound');
   h += slider('bass', 'Bass / Brong', s.bass, -10, 12, 1, ' dB', 'sound');
   h += slider('rasp', 'Serak / Cempreng', s.rasp, 0, 1, 0.05, '', 'sound');
@@ -126,7 +127,7 @@ function soundHtml() {
   h += slider('synth', 'Layer Sintetis (scream)', s.synth, 0, 1, 0.05, '', 'sound');
   h += slider('pop', 'Letupan Knalpot', s.pop, 0, 1, 0.05, '', 'sound');
   h += slider('runMix', 'Campuran Suara Jalan', s.runMix, 0, 1.5, 0.05, '', 'sound');
-  h += slider('volume', 'Volume', s.volume, 0.3, 1.5, 0.05, '', 'sound');
+  h += slider('volume', 'Volume', s.volume, 0.3, 2.5, 0.05, '', 'sound');
   h += '</div><div class="note">Knalpot yang dipasang, filter udara, timing & AFR juga ikut mengubah suara. Tahan tombol <b>GAS</b> di kiri bawah untuk mengetes.</div>';
   return h;
 }

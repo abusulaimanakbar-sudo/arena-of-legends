@@ -87,7 +87,7 @@ export const PARTS = {
 };
 
 export const SOUND_PRESETS = {
-  stock:  { name: 'Standar Vario',        pitch: 0,  bass: 0,  rasp: 0.0, drive: 0.05, lumpy: 0,    synth: 0.0,  pop: 0.0,  res: 700, volume: 0.9, runMix: 1.0 },
+  stock:  { name: 'Standar Vario',        pitch: 0,  bass: 0,  rasp: 0.0, drive: 0.05, lumpy: 0,    synth: 0.0,  pop: 0.0,  res: 700, volume: 1.2, runMix: 1.0 },
   racing: { name: 'Racing Kering',        pitch: 1.0,bass: -2, rasp: 0.6, drive: 0.35, lumpy: 0.05, synth: 0.2,  pop: 0.35, res: 1700,volume: 1.0, runMix: 1.1 },
   brong:  { name: 'Brong Berat',          pitch: -2.5,bass: 8, rasp: 0.4, drive: 0.5,  lumpy: 0.15, synth: 0.25, pop: 0.3,  res: 360, volume: 1.05,runMix: 1.0 },
   kuda:   { name: 'Timing Kuda (Galloping)', pitch: -1,bass: 5, rasp: 0.35,drive: 0.4,  lumpy: 0.85, synth: 0.3,  pop: 0.2,  res: 520, volume: 1.0, runMix: 1.0 },
