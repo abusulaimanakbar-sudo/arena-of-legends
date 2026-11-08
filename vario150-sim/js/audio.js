@@ -4,7 +4,7 @@ const LAYERS = [
   { id: 'mode2', mode: 2, url: 'assets/mode2.mp3' }, // rekaman langsam 2
 ];
 // rate pemutaran pada idle dan pada limiter (pemetaan linear sepanjang rentang gas)
-const RATE_IDLE = 0.85, RATE_LIMIT = 3.0;
+const RATE_IDLE = 1.0, RATE_LIMIT = 4.2;
 
 export class EngineAudio {
   constructor() { this.ctx = null; this.ready = false; this.loading = null; this.muted = false; this.layers = []; }
@@ -36,16 +36,16 @@ export class EngineAudio {
     const f = Math.min(1.05, Math.max(0, (st.rpm - idle) / Math.max(1, limit - idle)));
     // nada mengikuti RPM *dan* kecepatan: makin cepat motor, makin tinggi suaranya (CVT menahan RPM, jadi kecepatan ikut dihitung)
     const v = st.speed || 0;
-    const sF = Math.min(1.15, v / 27);
+    const sF = Math.min(1.2, v / 24);
     const sEff = Math.max(sF, f * (1 - Math.min(1, v / 6))); // diam/gas di tempat: ikut rpm
-    const pitchF = 0.25 * f + 0.75 * sEff;
+    const pitchF = Math.pow(0.2 * f + 0.8 * sEff, 0.85); // naik cepat di awal, terus naik sampai ngebut
     const rate = RATE_IDLE + (RATE_LIMIT - RATE_IDLE) * pitchF;
     const vol = setup.ecu.volume ?? 1.2;
     const mode = setup.ecu.soundMode === 2 ? 2 : 1;
     const load = 0.8 + 0.2 * st.throttle;
     this.layers.forEach((L) => {
       L.s.playbackRate.setTargetAtTime(rate, t, 0.05);
-      L.g.gain.setTargetAtTime(L.mode === mode ? vol * load * (0.7 + 0.35 * pitchF) : 0, t, 0.06);
+      L.g.gain.setTargetAtTime(L.mode === mode ? vol * load * (0.55 + 0.75 * pitchF) : 0, t, 0.06);
     });
   }
 
