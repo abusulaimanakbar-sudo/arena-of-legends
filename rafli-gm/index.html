@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RAFLI GM — Game Master</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header id="top">
+  <div class="brand">🛠 RAFLI <b>GM</b> <small>Game Master</small></div>
+  <div class="conn" id="conn" title="Status koneksi ke game">
+    <span id="pLocal" class="pill">Lokal</span><span id="pRemote" class="pill">Relay</span><span id="pGame" class="pill">Game</span>
+  </div>
+  <div class="tools"><span id="sendState">—</span><button id="btnConn">🔗 Koneksi</button></div>
+</header>
+<nav id="nav"></nav>
+<main id="main"></main>
+<div id="connBox" class="hidden"><div class="box">
+  <h3>🔗 Koneksi ke Game</h3>
+  <p>Masukkan <b>kode ruang</b> ini di game (tombol 🔗 di pojok kanan atas game). Setelah tersambung, semua perubahan di sini langsung berlaku di game.</p>
+  <label>Kode ruang<div class="row"><input id="cRoom" autocomplete="off"><button id="cCopy">Salin</button><button id="cNew">Baru</button></div></label>
+  <label>Server relay<input id="cServer" autocomplete="off"></label>
+  <label class="chk"><input type="checkbox" id="cRemote"> Pakai relay internet (wajib bila game dan GM adalah aplikasi terpisah)</label>
+  <label class="chk"><input type="checkbox" id="cAuto"> Ambil status game otomatis tiap 30 detik (menghabiskan kuota pesan)</label>
+  <div id="cStat" class="stat"></div>
+  <div class="row"><button id="cSave" class="ok">Simpan & sambung</button><button id="cResend">Kirim ulang semua pengaturan</button><button id="cClose">Tutup</button></div>
+  <small>Relay gratis ntfy.sh dibatasi ±250 pesan/hari per jaringan. Perubahan digabung otomatis supaya hemat. Untuk batas lebih longgar, isi alamat server ntfy milik sendiri. Kode ruang bersifat rahasia.</small>
+</div></div>
+<div id="toast"></div>
+<script type="module" src="js/gm.js"></script>
+</body>
+</html>

@@ -8,7 +8,7 @@ on:
         default: ''
   push:
     branches: [ 'claude/vario-150-simulator-game-wfg9rw' ]
-    paths: [ '.github/workflows/build-apk.yml', 'rafli-playstation/**', 'vario150-sim/**' ]
+    paths: [ '.github/workflows/build-apk.yml', 'rafli-playstation/**', 'rafli-gm/**', 'shared/**', 'vario150-sim/**' ]
 permissions:
   contents: write
 jobs:
@@ -18,8 +18,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { game: rafli-playstation, appid: com.rafli.playstation, appname: 'RAFLI PLAYSTATION', file: RAFLI-PLAYSTATION.apk }
-          - { game: vario150-sim, appid: com.rafli.vario150, appname: 'Vario 150 Sim', file: Vario150-Simulator.apk }
+          - { game: rafli-playstation, appid: com.rafli.playstation, appname: 'RAFLI PLAYSTATION', file: RAFLI-PLAYSTATION.apk, orient: sensorLandscape }
+          - { game: rafli-gm, appid: com.rafli.gm, appname: 'RAFLI GM', file: RAFLI-GM.apk, orient: fullSensor }
+          - { game: vario150-sim, appid: com.rafli.vario150, appname: 'Vario 150 Sim', file: Vario150-Simulator.apk, orient: sensorLandscape }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -36,7 +37,9 @@ jobs:
           npx cap init "${{ matrix.appname }}" "${{ matrix.appid }}" --web-dir www
           npx cap add android
           npx cap sync android
-          sed -i 's/<activity /<activity android:screenOrientation="sensorLandscape" /' android/app/src/main/AndroidManifest.xml
+          sed -i 's/<activity /<activity android:screenOrientation="${{ matrix.orient }}" /' android/app/src/main/AndroidManifest.xml
+          # izinkan server relay http (opsional) dan skema https
+          node -e "const f='capacitor.config.json';const c=JSON.parse(require('fs').readFileSync(f));c.server={androidScheme:'https',cleartext:true};require('fs').writeFileSync(f,JSON.stringify(c,null,2))"
           # layar penuh imersif: sembunyikan status bar & navigasi, isi sampai poni/notch
           MAIN=$(find android/app/src/main/java -name MainActivity.java)
           PKG=$(grep -m1 '^package' "$MAIN")

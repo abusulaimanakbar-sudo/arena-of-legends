@@ -1,6 +1,6 @@
 // Musik latar lo-fi (sintetis) + efek suara. Semua dibuat dengan WebAudio, tanpa file.
 export class GameAudio {
-  constructor() { this.ctx = null; this.musicOn = true; this.sfxOn = true; this.step = 0; this.next = 0; this.timer = null; this.blipT = 0; }
+  constructor() { this.ctx = null; this.musicOn = true; this.sfxOn = true; this.musicMul = 1; this.sfxMul = 1; this.step = 0; this.next = 0; this.timer = null; this.blipT = 0; }
 
   init() {
     if (this.ctx) { if (this.ctx.state !== 'running') this.ctx.resume(); return; }
@@ -9,8 +9,8 @@ export class GameAudio {
     this.master = c.createGain(); this.master.gain.value = 0.9;
     const comp = c.createDynamicsCompressor(); comp.threshold.value = -12; comp.ratio.value = 4;
     this.master.connect(comp); comp.connect(c.destination);
-    this.music = c.createGain(); this.music.gain.value = this.musicOn ? 0.55 : 0;
-    this.sfx = c.createGain(); this.sfx.gain.value = this.sfxOn ? 0.9 : 0;
+    this.music = c.createGain(); this.music.gain.value = this.musicOn ? 0.55 * this.musicMul : 0;
+    this.sfx = c.createGain(); this.sfx.gain.value = this.sfxOn ? 0.9 * this.sfxMul : 0;
     // reverb sederhana (delay berumpan balik)
     const dl = c.createDelay(1); dl.delayTime.value = 0.28; const fb = c.createGain(); fb.gain.value = 0.32; const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2200;
     dl.connect(lp); lp.connect(fb); fb.connect(dl); this.music.connect(this.master); const send = c.createGain(); send.gain.value = 0.35; this.music.connect(send); send.connect(dl); lp.connect(this.master);
@@ -20,8 +20,8 @@ export class GameAudio {
     this.timer = setInterval(() => this.schedule(), 40);
   }
   resume() { if (this.ctx && this.ctx.state !== 'running') this.ctx.resume(); }
-  setMusic(on) { this.musicOn = on; if (this.music) this.music.gain.setTargetAtTime(on ? 0.55 : 0, this.ctx.currentTime, 0.1); }
-  setSfx(on) { this.sfxOn = on; if (this.sfx) this.sfx.gain.setTargetAtTime(on ? 0.9 : 0, this.ctx.currentTime, 0.05); }
+  setMusic(on) { this.musicOn = on; if (this.music) this.music.gain.setTargetAtTime(on ? 0.55 * this.musicMul : 0, this.ctx.currentTime, 0.1); }
+  setSfx(on) { this.sfxOn = on; if (this.sfx) this.sfx.gain.setTargetAtTime(on ? 0.9 * this.sfxMul : 0, this.ctx.currentTime, 0.05); }
 
   // ---------- musik ----------
   schedule() {
