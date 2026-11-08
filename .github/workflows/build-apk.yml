@@ -8,7 +8,7 @@ on:
         default: ''
   push:
     branches: [ 'claude/vario-150-simulator-game-wfg9rw' ]
-    paths: [ '.github/workflows/build-apk.yml' ]
+    paths: [ '.github/workflows/build-apk.yml', 'rafli-playstation/**', 'vario150-sim/**' ]
 permissions:
   contents: write
 jobs:
@@ -46,7 +46,6 @@ jobs:
           name: ${{ matrix.game }}-apk
           path: /tmp/${{ matrix.file }}
       - name: Rilis (link unduhan)
-        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-latest

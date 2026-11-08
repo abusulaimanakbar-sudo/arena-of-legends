@@ -39,9 +39,9 @@ const STAFF = [
 let S = defaultState();
 function defaultState() {
   return { money: 0, run: 0, life: 0, st: Array.from({ length: 8 }, (_, i) => ({ o: i < 2 ? 1 : 0, c: 0, t: 0, l: 0, s: 0 })), mkt: 0, train: 0, snack: 0, ac: 0, decor: 0, lobby: 0, kasir: 0, staff: 0,
-    stars: 0, ep: 0, qs: null, qp: { earn: 0, served: 0, upg: 0, vip: 0 }, sat: 0.8, hhUntil: 0, hhReady: 0, clock: 9, day: 1, seen: Date.now(), served: 0, music: true, sfx: true, franchises: 0 };
+    stars: 0, ep: 0, qs: null, qp: { earn: 0, served: 0, upg: 0, vip: 0 }, sat: 0.8, ach: {}, cnt: { tap: 0, fix: 0, hh: 0 }, tut: 0, hhUntil: 0, hhReady: 0, clock: 9, day: 1, seen: Date.now(), served: 0, music: true, sfx: true, franchises: 0 };
 }
-function load() { try { const s = JSON.parse(localStorage.getItem(SAVE)); if (s && s.st && s.st.length === 8) S = { ...defaultState(), ...s, qp: { ...defaultState().qp, ...(s.qp || {}) } }; } catch (e) { /* abaikan */ } }
+function load() { try { const s = JSON.parse(localStorage.getItem(SAVE)); if (s && s.st && s.st.length === 8) S = { ...defaultState(), ...s, qp: { ...defaultState().qp, ...(s.qp || {}) }, cnt: { ...defaultState().cnt, ...(s.cnt || {}) } }; } catch (e) { /* abaikan */ } }
 function save() { try { S.seen = Date.now(); localStorage.setItem(SAVE, JSON.stringify(S)); } catch (e) { /* abaikan */ } }
 
 // ---- turunan ----
@@ -340,6 +340,17 @@ function updateParties(dt) {
       if (k >= 1) { q.state = 'play'; q.t = 0; q.st.busy = true; q.st.reserved = false; q.st.party = q; q.st.genre = q.genre; q.st.flash = 0; q.members.forEach((m) => setBubble(m, '🎮')); q.base = S.st[q.st.i]; }
     } else if (q.state === 'play') {
       q.t += dt; const st = q.st;
+      if (!st.broken && Math.random() < dt * 0.006 * (1 - Math.min(0.5, S.staff * 0.15)) * (1 + S.st[st.i].c * 0.12)) breakStation(st);
+      if (st.broken) {
+        q.t -= dt; st.brokenT += dt; q.members.forEach((m) => poseSitPlay(m.p, t, 0));
+        if (S.staff > 0 && st.brokenT > 7 / S.staff) fixStation(st, true);
+        else if (st.brokenT > 25) { // pelanggan kesal pergi
+          st.broken = false; if (st.alert) { st.g.remove(st.alert); st.alert = null; } st.busy = false; st.party = null; q.members.forEach((m) => { detachController(m.p); m.p.position.y = 0; setBubble(m, '😡'); });
+          S.sat = Math.max(0, S.sat - 0.1); audio.angry(); popup(st.g.localToWorld(new THREE.Vector3(0, 2.6, 1.6)), 'Konsol rusak — pelanggan pergi!', '#ff7a7a');
+          sendTo(q, q.members.map(() => DOOR_OUT.clone()), 'angry');
+        }
+        continue;
+      }
       const cheering = st.cheerT > 0; st.cheerT = Math.max(0, st.cheerT - dt);
       if (!cheering && Math.random() < dt * 0.12) { st.cheerT = 1.1; audio.cheer(); q.members.forEach((m) => setBubble(m, ['😆', '🔥', '🤩'][Math.floor(Math.random() * 3)])); }
       if (cheering && st.cheerT <= 0) q.members.forEach((m) => setBubble(m, '🎮'));
@@ -371,6 +382,18 @@ function updateParties(dt) {
       }
     }
   }
+}
+function breakStation(st) {
+  st.broken = true; st.brokenT = 0; audio.error();
+  const sp = emojiSprite('⚠️'); sp.scale.set(0.9, 0.9, 1); sp.position.set(0, 2.9, 1.6); st.g.add(sp); st.alert = sp;
+  if (st.party) st.party.members.forEach((m) => setBubble(m, '😟'));
+  popup(st.g.localToWorld(new THREE.Vector3(0, 3.4, 1.6)), 'Konsol hang! Tap untuk perbaiki', '#fbbf24');
+}
+function fixStation(st, auto) {
+  if (!st.broken) return; st.broken = false; if (st.alert) { st.g.remove(st.alert); st.alert = null; }
+  S.cnt.fix++; audio.buy(); popup(st.g.localToWorld(new THREE.Vector3(0, 3, 1.6)), auto ? '🔧 Pegawai memperbaiki' : '🔧 Diperbaiki!', '#7affb2');
+  if (st.party) st.party.members.forEach((m) => setBubble(m, '🎮'));
+  if (!auto) { const b = Math.max(300, incomeRate() * 2); earn(b); }
 }
 function cashierQueue() { return parties.filter((p) => p.state === 'queue' || p.state === 'toCounter' || p.state === 'pay').length % 3; }
 
@@ -439,9 +462,43 @@ function checkQuests() {
 }
 function incomeRate() { const nowT = performance.now(); while (incomeWin.length && nowT - incomeWin[0][0] > 20000) incomeWin.shift(); return incomeWin.reduce((a, b) => a + b[1], 0) / 20; }
 
+// ================= PRESTASI & TUTORIAL =================
+const ACH = [
+  { id: 's50', n: '🙋 Pelanggan Pertama', d: 'Layani 50 pelanggan', ok: () => S.served >= 50, r: 40000 },
+  { id: 's500', n: '🎉 Langganan Setia', d: 'Layani 500 pelanggan', ok: () => S.served >= 500, r: 600000 },
+  { id: 's5000', n: '🏙 Tersohor se-Kota', d: 'Layani 5.000 pelanggan', ok: () => S.served >= 5000, r: 12000000 },
+  { id: 'e1m', n: '💰 Jutawan', d: 'Total penghasilan Rp 1 Jt', ok: () => S.life >= 1e6, r: 80000 },
+  { id: 'e1b', n: '🏦 Miliarder', d: 'Total penghasilan Rp 1 M', ok: () => S.life >= 1e9, r: 20000000 },
+  { id: 'all8', n: '🏬 Toko Penuh', d: 'Buka semua 8 slot stasiun', ok: () => stationsOwned() >= 8, r: 900000 },
+  { id: 'ps5', n: '🎮 Sultan PS5', d: 'Punya PS5 Pro', ok: () => S.st.some((d) => d.o && d.c >= 4), r: 1500000 },
+  { id: 'tv77', n: '📺 Bioskop Mini', d: 'Pasang TV 77"', ok: () => S.st.some((d) => d.o && d.t >= 4), r: 1500000 },
+  { id: 'rep5', n: '⭐ Bintang Lima', d: 'Reputasi 5★', ok: () => rep() >= 4.5, r: 500000 },
+  { id: 'ep5', n: '📋 Pekerja Keras', d: 'Selesaikan 5 episode', ok: () => S.ep >= 5, r: 800000 },
+  { id: 'ep20', n: '🏅 Legenda Episode', d: 'Selesaikan 20 episode', ok: () => S.ep >= 20, r: 30000000 },
+  { id: 'fr1', n: '👑 Pengusaha Franchise', d: 'Buka cabang franchise pertama', ok: () => S.franchises >= 1, r: 100000 },
+  { id: 'fix10', n: '🔧 Teknisi Handal', d: 'Perbaiki 10 konsol yang hang', ok: () => S.cnt.fix >= 10, r: 300000 },
+  { id: 'tap100', n: '👆 Kasir Cepat', d: 'Tap kasir 100 kali', ok: () => S.cnt.tap >= 100, r: 200000 },
+  { id: 'hh10', n: '🔥 Raja Happy Hour', d: 'Pakai Happy Hour 10 kali', ok: () => S.cnt.hh >= 10, r: 500000 },
+];
+function checkAch() {
+  for (const a of ACH) if (!S.ach[a.id] && a.ok()) { S.ach[a.id] = 1; const r = Math.max(a.r, Math.round(incomeRate() * 90)); S.money += r; audio.quest(); banner(`🏆 Prestasi: ${a.n} · Hadiah ${money(r)}`); if (tab === 'ach') renderAll(); }
+}
+const TUT = [
+  { t: '👋 Selamat datang! Pelanggan akan masuk, main PS, lalu bayar di kasir. Tunggu pelanggan pertamamu.', ok: () => S.served >= 1 },
+  { t: '⭐ Bagus! Buka tab 🎮 Stasiun di bawah, lalu beli "Level Layanan" untuk menaikkan pendapatan.', ok: () => S.qp.upg >= 1 || S.ep > 0 },
+  { t: '🔓 Tambah stasiun: pilih chip 🔒 3 di tab Stasiun lalu beli slot baru supaya lebih banyak pelanggan terlayani.', ok: () => stationsOwned() >= 3 },
+  { t: '👆 Tap kasir (karyawan berbaju biru) untuk bonus uang. Kalau muncul ⚠ di atas stasiun, tap untuk memperbaiki konsol.', ok: () => S.cnt.tap >= 1 },
+  { t: '📋 Selesaikan 3 misi di panel Misi untuk naik episode — episode tidak ada habisnya. Selamat bermain!', ok: () => S.ep >= 1 },
+];
+function updateTutorial() {
+  const el = $('tut'); if (S.tut >= TUT.length) { el.classList.add('hidden'); return; }
+  const st = TUT[S.tut]; if (st.ok()) { S.tut++; audio.quest(); if (S.tut >= TUT.length) { el.classList.add('hidden'); return; } }
+  el.classList.remove('hidden'); el.textContent = TUT[S.tut].t;
+}
+
 // ================= UI =================
 let tab = 'st';
-const TABS = [['st', '🎮 Stasiun'], ['shop', '🏪 Toko'], ['staff', '🧑‍🔧 Staf'], ['quest', '📋 Misi'], ['fr', '👑 Franchise']];
+const TABS = [['st', '🎮 Stasiun'], ['shop', '🏪 Toko'], ['staff', '🧑‍🔧 Staf'], ['quest', '📋 Misi'], ['ach', '🏆 Prestasi'], ['fr', '👑 Franchise']];
 $('tabs').innerHTML = TABS.map(([k, l]) => `<button data-t="${k}">${l}</button>`).join('');
 $('tabs').onclick = (e) => { const b = e.target.closest('button'); if (b) { audio.init(); audio.click(); tab = b.dataset.t; renderAll(); } };
 function itemCard(id, title, desc, lvText, cost, extraCls = '') {
@@ -468,6 +525,9 @@ function renderAll() {
     const list = tab === 'shop' ? SHOP : STAFF; h += '<div class="cards">' + list.map((u) => { const lv = S[u.lvKey]; return itemCard('up' + u.id, u.name, u.desc, u.eff(lv), lv >= u.max ? null : u.cost(lv)); }).join('') + '</div>';
   } else if (tab === 'quest') {
     h += '<div class="qlist">' + `<h4>Episode ${S.ep + 1}</h4>` + (S.qs || []).map((q) => { const p = Math.min(qProg(q), q.n); const pct = Math.min(100, p / q.n * 100); return `<div class="q ${p >= q.n ? 'done' : ''}"><span>${p >= q.n ? '✅' : '🎯'} ${qDesc(q)}</span><div class="bar"><i style="width:${pct}%"></i></div></div>`; }).join('') + '<small>Selesaikan semua misi untuk naik episode. Episode tidak ada habisnya — target makin besar, bonus makin besar.</small></div>';
+  } else if (tab === 'ach') {
+    const got = ACH.filter((a) => S.ach[a.id]).length;
+    h += `<div class="qlist"><h4>🏆 Prestasi ${got}/${ACH.length}</h4><div class="stat">Pelanggan dilayani: <b>${S.served.toLocaleString('id-ID')}</b> · Total penghasilan: <b>${money(S.life)}</b> · Hari: <b>${S.day}</b> · Episode: <b>${S.ep + 1}</b> · Franchise: <b>${S.franchises}</b> · Konsol diperbaiki: <b>${S.cnt.fix}</b></div><div class="achs">` + ACH.map((a) => `<div class="ach ${S.ach[a.id] ? 'got' : ''}"><b>${S.ach[a.id] ? '✅' : '🔒'} ${a.n}</b><small>${a.d} · ${money(a.r)}</small></div>`).join('') + '</div></div>';
   } else {
     const stars = Math.floor(Math.sqrt(S.run / 1.5e6)); h += `<div class="cards"><div class="card wide"><h4>👑 Buka Cabang Franchise</h4><p>Reset toko (uang & upgrade) tapi dapat <b>Bintang Franchise</b> permanen: +20% pendapatan per bintang. Episode & statistik tetap. Bisa diulang tanpa batas.</p><span class="lv">Bintang saat ini: ${S.stars} · Tambahan jika reset sekarang: +${stars}</span><button data-a="franchise" class="${stars >= 1 ? 'can' : ''}" ${stars < 1 ? 'disabled' : ''}>${stars < 1 ? 'Butuh ' + money(1.5e6) + ' pendapatan run ini' : 'Buka Cabang (+' + stars + '★)'}</button></div></div>`;
   }
@@ -488,7 +548,7 @@ function buy(a) {
   if (ok) { S.qp.upg++; audio.buy(); toast('Berhasil dibeli!'); renderAll(); save(); checkQuests(); } else { audio.error(); toast('Uang belum cukup'); }
 }
 function doFranchise(stars) {
-  const keep = { stars: S.stars + stars, ep: S.ep, qs: S.qs, qp: S.qp, life: S.life, served: S.served, music: S.music, sfx: S.sfx, day: S.day, clock: S.clock, franchises: S.franchises + 1 };
+  const keep = { stars: S.stars + stars, ep: S.ep, qs: S.qs, qp: S.qp, life: S.life, served: S.served, music: S.music, sfx: S.sfx, day: S.day, clock: S.clock, franchises: S.franchises + 1, ach: S.ach, cnt: S.cnt, tut: S.tut };
   S = { ...defaultState(), ...keep }; S.money = 20000;
   parties.slice().forEach((q) => { scene.remove(...q.members.map((m) => m.p)); }); parties.length = 0; cashierBusy = null; stations.forEach((s) => { s.busy = false; s.reserved = false; });
   stations.forEach(buildStation); buildDecor(); syncStaff(); renderAll(); audio.levelUp(); banner(`👑 Cabang baru dibuka! Total ${S.stars}★ (+${stars}) — pendapatan permanen naik`); save();
@@ -504,7 +564,7 @@ let banT = 0; function banner(t) { const el = $('banner'); el.textContent = t; e
 function syncPrefs() { $('btnMus').textContent = S.music ? '🎵' : '🔇'; $('btnSfx').textContent = S.sfx ? '🔊' : '🔈'; $('btnMus').classList.toggle('off', !S.music); $('btnSfx').classList.toggle('off', !S.sfx); }
 $('btnMus').onclick = () => { audio.init(); S.music = !S.music; audio.setMusic(S.music); syncPrefs(); save(); };
 $('btnSfx').onclick = () => { audio.init(); S.sfx = !S.sfx; audio.setSfx(S.sfx); syncPrefs(); save(); if (S.sfx) audio.click(); };
-$('btnHH').onclick = () => { audio.init(); const now = Date.now(); if (now < S.hhReady) { toast('Happy Hour siap lagi dalam ' + Math.ceil((S.hhReady - now) / 1000) + ' dtk'); audio.error(); return; } S.hhUntil = now + 40000; S.hhReady = now + 130000; audio.horn(); banner('🔥 HAPPY HOUR! Pelanggan ×2, pendapatan ×1,5 selama 40 detik'); };
+$('btnHH').onclick = () => { audio.init(); const now = Date.now(); if (now < S.hhReady) { toast('Happy Hour siap lagi dalam ' + Math.ceil((S.hhReady - now) / 1000) + ' dtk'); audio.error(); return; } S.cnt.hh++; S.hhUntil = now + 40000; S.hhReady = now + 130000; audio.horn(); banner('🔥 HAPPY HOUR! Pelanggan ×2, pendapatan ×1,5 selama 40 detik'); };
 
 // ================= INPUT =================
 const ray = new THREE.Raycaster(), ptr = new THREE.Vector2(); let drag = null, moved = 0, pinch = null;
@@ -520,8 +580,9 @@ cv.addEventListener('wheel', (e) => { orbit.dist = Math.max(10, Math.min(34, orb
 function tap(e) {
   ptr.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ptr, camera);
   // kasir / meja kasir
-  const ch = ray.intersectObjects([cashier, counter], true)[0]; if (ch) { const bonus = Math.max(150, incomeRate() * 1.2); earn(bonus); audio.coin(); popup(CASHIER_POS.clone().add(new THREE.Vector3(0, 2.8, -0.4)), '+' + money(bonus), '#ffe27a'); return; }
+  const ch = ray.intersectObjects([cashier, counter], true)[0]; if (ch) { const bonus = Math.max(150, incomeRate() * 1.2); earn(bonus); S.cnt.tap++; audio.coin(); popup(CASHIER_POS.clone().add(new THREE.Vector3(0, 2.8, -0.4)), '+' + money(bonus), '#ffe27a'); return; }
   // stasiun
+  const brk = stations.find((s) => s.broken && ray.ray.distanceToPoint(toWorld(s, 0, 2.9, 1.6)) < 1.4); if (brk) { fixStation(brk, false); return; }
   let best = null, bd = 1e9; stations.forEach((s) => { const c = toWorld(s, 0, 1, 1.6); const r = ray.ray.distanceToPoint(c); if (r < 1.6) { const d = c.distanceTo(ray.ray.origin); if (d < bd) { bd = d; best = s; } } });
   if (best) { selected = best.i; tab = 'st'; audio.click(); renderAll(); if (!S.st[best.i].o && S.money >= SLOT_COST[best.i]) buy('slot' + best.i); }
 }
@@ -558,7 +619,7 @@ function frame(now) {
     uiT = 0; $('money').textContent = money(S.money); $('ips').textContent = money(incomeRate()); const r = rep(); const rr = Math.round(r); $('rep').textContent = '★'.repeat(rr) + '☆'.repeat(5 - rr);
     $('stars').textContent = '👑 ' + S.stars; const hh = Math.floor(S.clock), mm = Math.floor((S.clock % 1) * 60); $('clock').textContent = `Hari ${S.day} · ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')} ${hh >= 6 && hh < 18 ? '☀' : '🌙'}`;
     const now2 = Date.now(); const hhb = $('btnHH'); if (hhActive()) { hhb.textContent = '🔥 ' + Math.ceil((S.hhUntil - now2) / 1000) + 's'; hhb.classList.add('act'); } else if (now2 < S.hhReady) { hhb.textContent = '⏳ ' + Math.ceil((S.hhReady - now2) / 1000) + 's'; hhb.classList.remove('act'); } else { hhb.textContent = '⚡ Happy Hour'; hhb.classList.remove('act'); }
-    qT += 0.25; if (qT > 1) { qT = 0; checkQuests(); renderQuestMini(); } affordRefresh();
+    qT += 0.25; if (qT > 1) { qT = 0; checkQuests(); checkAch(); updateTutorial(); renderQuestMini(); } affordRefresh();
   }
   saveT += dt; if (saveT > 5) { saveT = 0; save(); }
   camera.position.set(orbit.tx + Math.sin(orbit.az) * Math.cos(orbit.el) * orbit.dist, Math.sin(orbit.el) * orbit.dist, orbit.tz + Math.cos(orbit.az) * Math.cos(orbit.el) * orbit.dist); camera.lookAt(orbit.tx, 0.3, orbit.tz);
@@ -577,5 +638,5 @@ $('welcomeOk').onclick = () => { audio.init(); $('welcome').classList.add('hidde
 stations.forEach(buildStation); buildDecor(); syncStaff(); syncPrefs(); renderAll(); onResize();
 addEventListener('pointerdown', () => { audio.init(); audio.setMusic(S.music); audio.setSfx(S.sfx); }, { once: true });
 addEventListener('keydown', () => { audio.init(); audio.setMusic(S.music); audio.setSfx(S.sfx); }, { once: true });
-window.__rp = { get S() { return S; }, stations, parties, orbit, spawnParty, buy, findPath };
+window.__rp = { breakStation, fixStation, get S() { return S; }, stations, parties, orbit, spawnParty, buy, findPath };
 requestAnimationFrame(frame);
