@@ -74,4 +74,14 @@ export class GameAudio {
   quest() { [659, 784, 988, 1319].forEach((f, i) => this.tone(f, 0.22, 0.14, 'square', i * 0.08)); }
   horn() { this.tone(220, 0.6, 0.14, 'sawtooth'); this.tone(277, 0.6, 0.12, 'sawtooth'); this.tone(330, 0.6, 0.1, 'sawtooth'); }
   blip() { if (!this.ok()) return; const f = 300 + Math.floor(Math.random() * 6) * 120; this.tone(f, 0.06, 0.025, 'square', 0, f * (Math.random() < 0.5 ? 1.5 : 0.7)); }
+
+  // ---- suara tambahan ----
+  voice(pitch = 1, n = 4) { if (!this.ok()) return; for (let i = 0; i < n; i++) this.tone((180 + Math.random() * 90) * pitch, 0.07, 0.035, 'sawtooth', i * 0.075, (140 + Math.random() * 80) * pitch); }
+  laugh() { if (!this.ok()) return; for (let i = 0; i < 5; i++) this.tone(420 + (i % 2) * 90, 0.08, 0.04, 'triangle', i * 0.1, 300); }
+  shout() { this.tone(300, 0.35, 0.07, 'sawtooth', 0, 520); }
+  eat() { if (!this.ok()) return; const t = this.ctx.currentTime; this.noiseHit(t, 0.05, 0.08, 2500, 'bandpass', this.sfx); this.noiseHit(t + 0.09, 0.05, 0.06, 2000, 'bandpass', this.sfx); }
+  car() { if (!this.ok()) return; const t = this.ctx.currentTime; this.osc('sawtooth', 70, t, 0.9, 0.04, this.sfx, 110); }
+  thunder() { if (!this.ok()) return; const t = this.ctx.currentTime; this.noiseHit(t, 1.6, 0.35, 220, 'lowpass', this.sfx); }
+  setRain(on) { if (!this.ctx) return; if (on && !this.rainSrc) { const s = this.ctx.createBufferSource(); s.buffer = this.noise; s.loop = true; const f = this.ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 3200; f.Q.value = 0.6; this.rainG = this.ctx.createGain(); this.rainG.gain.value = 0; s.connect(f).connect(this.rainG).connect(this.sfx); s.start(); this.rainSrc = s; } if (this.rainG) this.rainG.gain.setTargetAtTime(on ? 0.12 : 0, this.ctx.currentTime, 0.8); }
+  fanfare() { [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => this.tone(f, 0.2, 0.12, 'square', i * 0.11)); }
 }

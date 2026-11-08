@@ -55,18 +55,91 @@ export function makeConsole(tier) {
 }
 
 // ---------- sofa (kenyamanan 0..2) ----------
-export function makeSofa(color, comfort = 0) {
+export function makeSofa(color, comfort = 0, width = 2.1) {
   const g = new THREE.Group();
   const m = comfort >= 1 ? std(color, { roughness: 0.35, metalness: 0.05 }) : std(color, { roughness: 0.9 });
-  const seat = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.36, 0.9), m); seat.position.y = 0.27; g.add(seat);
-  const bk = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.62, 0.22), m); bk.position.set(0, 0.72, 0.34); bk.rotation.x = -0.1; g.add(bk);
-  for (const sx of [-1, 1]) { const arm = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.5, 0.9), m); arm.position.set(sx * 1.06, 0.46, 0); g.add(arm); }
-  for (const sx of [-1, 1]) { const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.1, 8), std(0x222)); leg.position.set(sx * 0.95, 0.05, 0.3); g.add(leg); const leg2 = leg.clone(); leg2.position.z = -0.3; g.add(leg2); }
-  if (comfort >= 2) { for (const sx of [-1, 1]) { const cu = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.4, 0.12), std(0xfacc15, { roughness: 0.8 })); cu.position.set(sx * 0.7, 0.62, 0.2); cu.rotation.set(-0.25, sx * 0.2, 0); g.add(cu); } }
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(width, 0.36, 0.9), m); seat.position.y = 0.27; g.add(seat);
+  const bk = new THREE.Mesh(new THREE.BoxGeometry(width, 0.62, 0.22), m); bk.position.set(0, 0.72, 0.34); bk.rotation.x = -0.1; g.add(bk);
+  for (const sx of [-1, 1]) { const arm = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.5, 0.9), m); arm.position.set(sx * (width / 2 + 0.0), 0.46, 0); g.add(arm); }
+  for (const sx of [-1, 1]) { const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.1, 8), std(0x222)); leg.position.set(sx * (width / 2 - 0.1), 0.05, 0.3); g.add(leg); const leg2 = leg.clone(); leg2.position.z = -0.3; g.add(leg2); }
+  if (comfort >= 2) { for (const sx of [-1, 1]) { const cu = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.4, 0.12), std(0xfacc15, { roughness: 0.8 })); cu.position.set(sx * (width / 2 - 0.4), 0.62, 0.2); cu.rotation.set(-0.25, sx * 0.2, 0); g.add(cu); } }
   g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   return g;
 }
+export function makeChair(color = 0x3b82f6) {
+  const g = new THREE.Group(); const m = std(color, { roughness: 0.6 });
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.08, 0.55), m); seat.position.y = 0.45; g.add(seat);
+  const bk = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.55, 0.07), m); bk.position.set(0, 0.76, 0.24); g.add(bk);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.45, 6), std(0x222)); l.position.set(sx * 0.22, 0.22, sz * 0.22); g.add(l); }
+  g.traverse((o) => { if (o.isMesh) { o.castShadow = true; } });
+  return g;
+}
 
+// ---------- kendaraan low-poly ----------
+export function makeCar(color = 0xdc2626, kind = 'car') {
+  const g = new THREE.Group(); const body = std(color, { roughness: 0.4, metalness: 0.3, flatShading: true }), glass = std(0x1f2937, { roughness: 0.15, metalness: 0.5, flatShading: true }), dark = std(0x111111);
+  const tall = kind === 'suv' ? 0.18 : 0;
+  const lower = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.62 + tall, 4.1), body); lower.position.y = 0.58 + tall / 2; g.add(lower);
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(1.62, 0.56 + tall, 2.2), glass); cab.position.set(0, 1.12 + tall, -0.15); g.add(cab);
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.66, 0.08, 2.0), body); roof.position.set(0, 1.44 + tall * 1.3, -0.15); g.add(roof);
+  const hood = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.1, 1.2), body); hood.position.set(0, 0.92 + tall, 1.45); g.add(hood);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.26, 10), dark); w.rotation.z = Math.PI / 2; w.position.set(sx * 0.93, 0.34, sz * 1.3); g.add(w); }
+  for (const sx of [-1, 1]) { const hl = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.14, 0.05), new THREE.MeshBasicMaterial({ color: 0xfff6c8, toneMapped: false })); hl.position.set(sx * 0.62, 0.72 + tall, 2.07); g.add(hl); const tl = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.12, 0.05), new THREE.MeshBasicMaterial({ color: 0xff2222, toneMapped: false })); tl.position.set(sx * 0.62, 0.74 + tall, -2.07); g.add(tl); }
+  g.traverse((o) => { if (o.isMesh) o.castShadow = true; }); return g;
+}
+export function makeBike(color = 0x2563eb) {
+  const g = new THREE.Group(); const body = std(color, { roughness: 0.4, flatShading: true }), dark = std(0x111111);
+  const mid = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.45, 1.0), body); mid.position.set(0, 0.55, -0.2); g.add(mid);
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.1, 0.8), dark); seat.position.set(0, 0.85, -0.3); g.add(seat);
+  const front = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.7, 0.3), body); front.position.set(0, 0.7, 0.55); g.add(front);
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.05, 0.05), dark); bar.position.set(0, 1.08, 0.5); g.add(bar);
+  for (const z of [0.7, -0.75]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.14, 10), dark); w.rotation.z = Math.PI / 2; w.position.set(0, 0.28, z); g.add(w); }
+  const hl = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, 0.04), new THREE.MeshBasicMaterial({ color: 0xfff6c8, toneMapped: false })); hl.position.set(0, 0.95, 0.72); g.add(hl);
+  g.traverse((o) => { if (o.isMesh) o.castShadow = true; }); return g;
+}
+
+// ---------- makanan kantin ----------
+export function makeFood(kind) {
+  const g = new THREE.Group();
+  if (kind === 'mie') { const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.07, 0.08, 14), std(0xf8fafc, { roughness: 0.3 })); bowl.position.y = 0.04; const noodle = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.03, 14), std(0xf4c542, { roughness: 0.9 })); noodle.position.y = 0.085; const egg = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), std(0xfff7d6)); egg.position.set(0.03, 0.115, 0.01); egg.scale.y = 0.6; const sc = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.01, 0.03), std(0x2f9e44)); sc.position.set(-0.04, 0.105, 0.03); g.add(bowl, noodle, egg, sc); }
+  else if (kind === 'teh' || kind === 'jeruk') { const col = kind === 'teh' ? 0xc2761e : 0xff8a1f; const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.034, 0.13, 10), std(col, { transparent: true, opacity: 0.85, roughness: 0.1 })); glass.position.y = 0.065; const ice = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.03), std(0xffffff, { transparent: true, opacity: 0.7 })); ice.position.set(0, 0.12, 0); const st = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.13, 4), std(0xef4444)); st.position.set(0.015, 0.15, 0); st.rotation.z = 0.2; g.add(glass, ice, st); }
+  else if (kind === 'kopi') { const sa = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.01, 12), std(0xf8fafc)); sa.position.y = 0.005; const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.035, 0.06, 12), std(0xf8fafc)); cup.position.y = 0.04; const cf = new THREE.Mesh(new THREE.CylinderGeometry(0.043, 0.043, 0.005, 12), std(0x3b2314)); cf.position.y = 0.068; g.add(sa, cup, cf); }
+  else { const pl = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.1, 0.015, 14), std(0xf8fafc)); pl.position.y = 0.008; g.add(pl); for (let i = 0; i < 4; i++) { const fr = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.025, 8), std(0xc98a2b)); fr.position.set(Math.cos(i * 1.6) * 0.05, 0.03 + (i > 2 ? 0.02 : 0), Math.sin(i * 1.6) * 0.05); g.add(fr); } }
+  g.traverse((o) => { if (o.isMesh) o.castShadow = true; }); return g;
+}
+
+// ---------- gelembung dialog ----------
+const bubCache = new Map();
+export function dialogSprite(text, tone = 'say') {
+  const key = tone + '|' + text; let tex = bubCache.get(key);
+  if (!tex) {
+    if (bubCache.size > 250) bubCache.clear();
+    const lines = []; const words = text.split(' '); let cur = ''; for (const w of words) { if ((cur + ' ' + w).trim().length > 18) { lines.push(cur.trim()); cur = w; } else cur += ' ' + w; } if (cur.trim()) lines.push(cur.trim());
+    const W = 360, H = 40 + lines.length * 40;
+    tex = canvasTex(W, H + 20, (g, w, h) => {
+      const fill = tone === 'shout' ? '#fff3b0' : tone === 'bad' ? '#ffd5d5' : tone === 'good' ? '#d5ffe0' : '#ffffff'; const stroke = tone === 'shout' ? '#f59e0b' : tone === 'bad' ? '#ef4444' : tone === 'good' ? '#22c55e' : '#334155';
+      g.fillStyle = fill; g.strokeStyle = stroke; g.lineWidth = 5; const r = 22; g.beginPath(); g.moveTo(r, 4); g.lineTo(w - r, 4); g.quadraticCurveTo(w - 4, 4, w - 4, r); g.lineTo(w - 4, H - r); g.quadraticCurveTo(w - 4, H, w - r, H); g.lineTo(w / 2 + 14, H); g.lineTo(w / 2, H + 16); g.lineTo(w / 2 - 14, H); g.lineTo(r, H); g.quadraticCurveTo(4, H, 4, H - r); g.lineTo(4, r); g.quadraticCurveTo(4, 4, r, 4); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = '#111827'; g.font = (tone === 'shout' ? 'bold ' : '') + '30px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; lines.forEach((l, i) => g.fillText(l, w / 2, 28 + i * 38));
+    });
+    tex.userData.aspect = (H + 20) / W; bubCache.set(key, tex);
+  }
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false })); const wd = tone === 'shout' ? 2.3 : 1.9; sp.scale.set(wd, wd * tex.userData.aspect, 1); sp.renderOrder = 14; sp.center.set(0.5, 0); return sp;
+}
+
+// ---------- gerakan tambahan (lapisan di atas pose dasar) ----------
+export function applyGesture(p, name, t, k = 1) {
+  const u = p.userData, a = u.arms; const ph = u.phase;
+  if (name === 'talk') { a[1].up.rotation.x = -0.9 + Math.sin(t * 6 + ph) * 0.25 * k; a[1].fo.rotation.x = -1.2 + Math.sin(t * 7) * 0.3 * k; u.head.rotation.y += Math.sin(t * 3 + ph) * 0.15; u.head.rotation.x = Math.sin(t * 8) * 0.06; }
+  else if (name === 'laugh') { u.hips.rotation.x += -0.2; u.head.rotation.x = -0.35 + Math.sin(t * 22) * 0.08; u.hips.position.y += Math.abs(Math.sin(t * 16)) * 0.025; a[0].up.rotation.x = -0.4; a[0].fo.rotation.x = -1.3; }
+  else if (name === 'shout') { u.head.rotation.x = -0.25; a[0].up.rotation.x = -2.5 + Math.sin(t * 10) * 0.25; a[1].up.rotation.x = -2.5 + Math.cos(t * 10) * 0.25; a[0].fo.rotation.x = -0.3; a[1].fo.rotation.x = -0.3; u.hips.position.y += Math.abs(Math.sin(t * 12)) * 0.03; }
+  else if (name === 'wave') { a[1].up.rotation.x = -2.6; a[1].up.rotation.z = -0.2 + Math.sin(t * 9) * 0.35; a[1].fo.rotation.x = -0.4; }
+  else if (name === 'facepalm') { a[1].up.rotation.x = -1.4; a[1].fo.rotation.x = -1.9; u.head.rotation.x = 0.4; }
+  else if (name === 'eat') { const c = (Math.sin(t * 2.4 + ph) + 1) / 2; a[1].up.rotation.x = -0.5 - c * 0.9; a[1].fo.rotation.x = -1.0 - c * 1.2; u.head.rotation.x += c * 0.12; }
+  else if (name === 'phone') { a[0].up.rotation.x = -1.2; a[1].up.rotation.x = -1.2; a[0].fo.rotation.x = -1.5; a[1].fo.rotation.x = -1.5; u.head.rotation.x = 0.4; u.head.rotation.y = Math.sin(t * 0.6 + ph) * 0.05; }
+  else if (name === 'point') { a[1].up.rotation.x = -1.5; a[1].fo.rotation.x = -0.1; a[1].up.rotation.z = -0.15; }
+  else if (name === 'rage') { u.hips.position.y += Math.abs(Math.sin(t * 20)) * 0.04; a[0].up.rotation.x = -1.8 + Math.sin(t * 18) * 0.5; a[1].up.rotation.x = -1.8 + Math.cos(t * 18) * 0.5; u.head.rotation.x = 0.2; }
+  else if (name === 'sleep') { u.head.rotation.x = 0.5; u.head.rotation.z = Math.sin(t * 0.8) * 0.1; }
+}
 // ---------- orang ----------
 const SKIN = [0xf1c27d, 0xe0ac69, 0xc68642, 0x8d5524, 0xffdbac];
 const SHIRTS = [0xef4444, 0x22c55e, 0xf59e0b, 0x8b5cf6, 0x06b6d4, 0xec4899, 0x64748b, 0xe2e8f0, 0x14b8a6];
