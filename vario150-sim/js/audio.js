@@ -6,11 +6,10 @@ const LAYERS = [
   // Mode 1: rekaman awal (idle + saat jalan)
   { id: 'idle', mode: 1, url: 'assets/idle.mp3', base: 1100, c: 1100 },
   { id: 'jalan', mode: 1, url: 'assets/run.mp3', base: 5600, c: 5000 },
-  // Mode 2: rekaman langsam → gas dikit → tengah → atas
+  // Mode 2: rekaman langsam → gas dikit → atas
   { id: 'langsam', mode: 2, url: 'assets/lang1.mp3', base: 1500, c: 1500 },
   { id: 'dikit', mode: 2, url: 'assets/lang2.mp3', base: 3200, c: 3200 },
-  { id: 'tengah', mode: 2, url: 'assets/mid.mp3', base: 6600, c: 7000 },
-  { id: 'atas', mode: 2, url: 'assets/high.mp3', base: 11000, c: 9800 },
+  { id: 'atas', mode: 2, url: 'assets/high.mp3', base: 11000, c: 8500 },
 ];
 
 
