@@ -3,20 +3,23 @@ on:
   workflow_dispatch:
     inputs:
       game:
-        description: 'Folder game: vario150-sim atau rafli-playstation'
-        required: true
-        default: 'rafli-playstation'
-      appid:
-        description: 'Application ID'
-        required: true
-        default: 'com.rafli.playstation'
-      appname:
-        description: 'Nama aplikasi'
-        required: true
-        default: 'RAFLI PLAYSTATION'
+        description: 'Folder game (kosong = semua): vario150-sim atau rafli-playstation'
+        required: false
+        default: ''
+  push:
+    branches: [ 'claude/vario-150-simulator-game-wfg9rw' ]
+    paths: [ '.github/workflows/build-apk.yml' ]
+permissions:
+  contents: write
 jobs:
   apk:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { game: rafli-playstation, appid: com.rafli.playstation, appname: 'RAFLI PLAYSTATION', file: RAFLI-PLAYSTATION.apk }
+          - { game: vario150-sim, appid: com.rafli.vario150, appname: 'Vario 150 Sim', file: Vario150-Simulator.apk }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,16 +30,26 @@ jobs:
         run: |
           mkdir -p /tmp/app && cd /tmp/app
           npm init -y >/dev/null
-          npm i @capacitor/core @capacitor/cli @capacitor/android >/dev/null
-          mkdir www && cp -r "$GITHUB_WORKSPACE/${{ inputs.game }}/." www/
-          npx cap init "${{ inputs.appname }}" "${{ inputs.appid }}" --web-dir www
+          npm i @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6 >/dev/null
+          mkdir www && cp -r "$GITHUB_WORKSPACE/${{ matrix.game }}/." www/
+          rm -f www/README.md www/package.json
+          npx cap init "${{ matrix.appname }}" "${{ matrix.appid }}" --web-dir www
           npx cap add android
           npx cap sync android
-          # layar penuh landscape
           sed -i 's/<activity /<activity android:screenOrientation="sensorLandscape" /' android/app/src/main/AndroidManifest.xml
       - name: Build APK debug
         run: cd /tmp/app/android && ./gradlew assembleDebug --no-daemon
+      - name: Ganti nama APK
+        run: cp /tmp/app/android/app/build/outputs/apk/debug/app-debug.apk "/tmp/${{ matrix.file }}"
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.game }}-apk
-          path: /tmp/app/android/app/build/outputs/apk/debug/app-debug.apk
+          name: ${{ matrix.game }}-apk
+          path: /tmp/${{ matrix.file }}
+      - name: Rilis (link unduhan)
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-latest
+          name: APK terbaru
+          files: /tmp/${{ matrix.file }}
+          prerelease: true
