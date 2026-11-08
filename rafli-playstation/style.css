@@ -5,7 +5,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0a0b14;color:#eef0ff;
 button{font:inherit;color:inherit;cursor:pointer;border:1px solid #2d3160;background:#151833dd;border-radius:9px;padding:5px 10px;backdrop-filter:blur(6px);transition:.12s}
 button:hover{border-color:#5560ff}
 /* ---- bar atas (tipis) ---- */
-#top{position:fixed;left:0;right:0;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center;padding:5px 10px;background:linear-gradient(#000d,#0000);gap:8px;height:48px;pointer-events:none}
+#top{position:fixed;left:0;right:0;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center;padding:5px max(10px,env(safe-area-inset-right)) 5px max(10px,env(safe-area-inset-left));background:linear-gradient(#000d,#0000);gap:8px;height:48px;pointer-events:none}
 #top>*{pointer-events:auto}
 .brand{font-weight:800;letter-spacing:.1em;font-size:14px;white-space:nowrap}.brand b{color:#4aa3ff}.sym{font-size:11px;letter-spacing:.18em;margin-right:5px;background:linear-gradient(90deg,#4ade80,#f87171,#60a5fa,#f472b6);-webkit-background-clip:text;color:transparent}
 .stats{display:flex;gap:6px;align-items:stretch}
@@ -17,7 +17,7 @@ button:hover{border-color:#5560ff}
 #btnHH{white-space:nowrap;background:#7a2e00;border-color:#fb923c;font-weight:700}#btnHH.act{background:#c2410c;box-shadow:0 0 14px #fb923c}
 .btns button.off{opacity:.5}
 /* ---- panel samping (kanan) ---- */
-#side{position:fixed;right:8px;top:54px;bottom:8px;width:clamp(240px,25vw,330px);z-index:5;background:#080a18e6;border:1px solid #23264d;border-radius:14px;padding:8px;display:flex;flex-direction:column;gap:6px;backdrop-filter:blur(8px);transition:transform .25s}
+#side{position:fixed;right:max(8px,env(safe-area-inset-right));top:54px;bottom:8px;width:clamp(240px,25vw,330px);z-index:5;background:#080a18e6;border:1px solid #23264d;border-radius:14px;padding:8px;display:flex;flex-direction:column;gap:6px;backdrop-filter:blur(8px);transition:transform .25s}
 #side.closed{transform:translateX(calc(100% + 16px))}
 .tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
 .tabs button{padding:5px 2px;font-size:11px;white-space:nowrap}.tabs button.on{background:#2540d9;border-color:#4aa3ff}
@@ -36,7 +36,7 @@ button:hover{border-color:#5560ff}
 .achs{display:flex;flex-direction:column;gap:4px}
 .ach{background:#12163a;border:1px solid #23264d;border-radius:8px;padding:5px 8px;opacity:.6}.ach.got{opacity:1;border-color:#4ade80}.ach b{display:block;font-size:11px}.ach small{color:#9ba0d4;font-size:10px}
 /* ---- HUD kiri ---- */
-#quests{position:fixed;left:8px;top:54px;z-index:4;background:#0b0d1fb8;border:1px solid #23264d;border-radius:10px;padding:6px 10px;font-size:11px;max-width:260px;backdrop-filter:blur(6px);pointer-events:none}
+#quests{position:fixed;left:max(8px,env(safe-area-inset-left));top:54px;z-index:4;background:#0b0d1fb8;border:1px solid #23264d;border-radius:10px;padding:6px 10px;font-size:11px;max-width:260px;backdrop-filter:blur(6px);pointer-events:none}
 #quests b{display:block;margin-bottom:2px;color:#4aa3ff}
 .qm{margin:2px 0;color:#c9ceff}.qm em{color:#ffd45e;font-style:normal;float:right;margin-left:8px}.qm.done{color:#6ee7b7}
 #banner{position:fixed;z-index:6;left:calc(50% - 130px);top:54px;transform:translate(-50%,-30px);background:linear-gradient(90deg,#1e3a8a,#7c3aed);border:1px solid #93c5fd;padding:7px 16px;border-radius:22px;opacity:0;transition:.35s;pointer-events:none;font-weight:700;font-size:13px;max-width:60vw;text-align:center}
@@ -57,3 +57,4 @@ body.noside #banner,body.noside #toast,body.noside #tut{left:50%}
   .card p{display:none}.tabs button{font-size:10px}
 }
 @media(max-width:920px) and (max-height:520px){.stats>div:nth-child(5){display:none}.brand{display:none}#btnHH{font-size:11px;padding:3px 7px}.btns button{padding:3px 7px}.money{min-width:70px}.money b{white-space:nowrap}}
+@media(max-height:520px){#side{right:max(6px,env(safe-area-inset-right))}#top{padding-left:max(8px,env(safe-area-inset-left));padding-right:max(8px,env(safe-area-inset-right))}}

@@ -598,7 +598,7 @@ function onResize() {
 addEventListener('resize', onResize); addEventListener('orientationchange', () => setTimeout(onResize, 200));
 $('btnSide').onclick = () => { $('side').classList.toggle('closed'); onResize(); audio.init(); audio.click(); };
 $('btnFull').onclick = () => { try { const el = document.documentElement; if (document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen().then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {}); } catch (e) { /* abaikan */ } };
-addEventListener('pointerdown', () => { try { if (screen.orientation && screen.orientation.lock && matchMedia('(pointer:coarse)').matches) screen.orientation.lock('landscape').catch(() => {}); } catch (e) { /* abaikan */ } }, { once: true });
+addEventListener('pointerdown', () => { try { if (matchMedia('(pointer:coarse)').matches) { const el = document.documentElement; const fs = el.requestFullscreen ? el.requestFullscreen() : null; if (fs) fs.then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {}); } } catch (e) { /* abaikan */ } }, { once: true });
 
 // ================= LOOP =================
 let arrive = 3, saveT = 0, uiT = 0, last = performance.now(), blipT = 0, qT = 0;
