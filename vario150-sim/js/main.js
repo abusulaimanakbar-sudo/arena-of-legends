@@ -212,16 +212,16 @@ $('btnGarage').onclick = () => setMode('garage'); $('btnDrive').onclick = () => 
 $('btnReset').onclick = () => { setup = cloneSetup(DEFAULT_SETUP); refreshAll(true); renderPanel(); };
 
 // ---------- balap ----------
-const lap = { n: 1, t: 0, best: (() => { try { return +localStorage.getItem('vario150-best') || 0; } catch (e) { return 0; } })(), last: 0, maxI: 0, prevI: 0, started: false };
+const lap = { n: 1, t: 0, best: (() => { try { return +localStorage.getItem('vario150-best400') || 0; } catch (e) { return 0; } })(), last: 0, maxI: 0, prevI: 0, started: false };
 const t100 = { t: 0, running: false, done: null };
 function resetRide() {
   ps = newState(world.start.pos.x + world.norm[0].x * 2, world.start.pos.z + world.norm[0].z * 2, world.start.heading, eng.idleRpm);
-  lap.n = 1; lap.t = 0; lap.maxI = 0; lap.prevI = 0; lap.started = false; t100.t = 0; t100.running = false; t100.done = null; $('t100').textContent = '--'; $('flash').textContent = '';
+  lap.n = 1; lap.t = 0; lap.maxI = 0; lap.prevI = 0; lap.started = false; lap.done = false; t100.t = 0; t100.running = false; t100.done = null; $('t100').textContent = '--'; $('flash').textContent = '';
   say('SIAP! Tekan GAS (W)', 1800);
 }
 let msgT = 0; function say(t, ms = 1500) { const m = $('msg'); m.textContent = t; m.style.opacity = 1; clearTimeout(msgT); msgT = setTimeout(() => (m.style.opacity = 0), ms); }
 const fmt = (t) => { const m = Math.floor(t / 60), s = t - m * 60; return `${m}:${s.toFixed(1).padStart(4, '0')}`; };
-$('tBest').textContent = lap.best ? fmt(lap.best) : '--';
+$('tBest').textContent = lap.best ? lap.best.toFixed(2) + 's' : '--';
 
 addEventListener('keydown', (e) => {
   keys[e.code] = true;
@@ -296,14 +296,14 @@ function updateDrive(dt) {
   if (nr.dist > half + 3.6) {
     const over = nr.dist - (half + 3.6); const sgn = Math.sign(nr.side); ps.x -= world.norm[nr.i].x * sgn * over; ps.z -= world.norm[nr.i].z * sgn * over; if (ps.v > 3) { say('TABRAK!', 600); } ps.v *= 0.35;
   }
-  // lap & waktu
-  const I = nr.i;
-  if (ps.v > 0.5 || lap.started) { lap.started = true; lap.t += dt; }
-  if (lap.prevI > world.n * 0.85 && I < world.n * 0.15 && lap.maxI > world.n * 0.6) {
-    lap.last = lap.t; if (!lap.best || lap.t < lap.best) { lap.best = lap.t; try { localStorage.setItem('vario150-best', lap.t); } catch (e) { /* abaikan */ } $('flash').textContent = 'REKOR BARU!'; } else $('flash').textContent = 'Lap ' + fmt(lap.t);
-    $('tBest').textContent = fmt(lap.best); lap.n++; lap.t = 0; lap.maxI = 0; setTimeout(() => ($('flash').textContent = ''), 3500);
+  // jarak, waktu & drag 400 m (jalan lurus)
+  if (ps.v > 0.5 || lap.started) { lap.started = true; if (!lap.done) lap.t += dt; }
+  if (!lap.done && ps.z >= 400) {
+    lap.done = true; const t4 = lap.t;
+    if (!lap.best || t4 < lap.best) { lap.best = t4; try { localStorage.setItem('vario150-best400', t4); } catch (e) { /* abaikan */ } $('flash').textContent = '400 m: ' + t4.toFixed(2) + ' dtk — REKOR!'; } else $('flash').textContent = '400 m: ' + t4.toFixed(2) + ' dtk';
+    $('tBest').textContent = lap.best.toFixed(2) + 's'; setTimeout(() => ($('flash').textContent = ''), 4500);
   }
-  if (I > lap.maxI && I - lap.prevI < 60) lap.maxI = I; lap.prevI = I;
+  if (ps.z > 9900) { say('Ujung jalan — kembali ke start', 1500); resetRide(); return; }
   // 0-100
   const kmh = ps.v * 3.6;
   if (!t100.running && t100.done == null && ps.v > 0.3 && kmh < 8) { t100.running = true; t100.t = 0; }
@@ -335,7 +335,7 @@ function updateDrive(dt) {
   // suara
   audio.update(dt, { rpm: ps.rpm, throttle: inp.thr ? 1 : ps.thr, speed: ps.v, setup, eng });
   // HUD
-  uiAcc += dt; if (uiAcc > 0.03) { uiAcc = 0; $('spd').textContent = Math.round(kmh); $('rpmTxt').textContent = `${Math.round(ps.rpm / 10) * 10} rpm · CVT ${(ps.G / (9 * 0.88 * 1)).toFixed(2)}:1`; $('lap').textContent = lap.n; $('tLap').textContent = fmt(lap.t); drawTach(ps.rpm, setup.ecu.limit, ps.limiter); }
+  uiAcc += dt; if (uiAcc > 0.03) { uiAcc = 0; $('spd').textContent = Math.round(kmh); $('rpmTxt').textContent = `${Math.round(ps.rpm / 10) * 10} rpm · CVT ${(ps.G / (9 * 0.88 * 1)).toFixed(2)}:1`; $('lap').textContent = Math.max(0, Math.round(ps.z)) + ' m'; $('tLap').textContent = fmt(lap.t); drawTach(ps.rpm, setup.ecu.limit, ps.limiter); }
 }
 
 function drawTach(rpm, limit, lim) {

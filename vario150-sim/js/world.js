@@ -7,30 +7,27 @@ function rng(seed) { let s = seed; return () => (s = (s * 16807) % 2147483647) /
 
 export function buildWorld(scene) {
   const R = rng(42);
-  // jalur: titik kontrol (x,z)
-  const cp = [[0, 0], [160, 0], [300, 40], [380, 150], [340, 280], [220, 330], [120, 260], [60, 330], [-60, 380], [-200, 320], [-240, 190], [-160, 90], [-80, 50]];
-  const curve = new THREE.CatmullRomCurve3(cp.map((p) => new THREE.Vector3(p[0], 0, p[1])), true, 'centripetal');
-  const N = 900; const pts = curve.getSpacedPoints(N); pts.pop();
-  const n = pts.length; const tang = [], norm = [];
-  for (let i = 0; i < n; i++) { const a = pts[i], b = pts[(i + 1) % n]; const t = new THREE.Vector3().subVectors(b, a).normalize(); tang.push(t); norm.push(new THREE.Vector3(-t.z, 0, t.x)); }
-  const len = curve.getLength();
+  // jalan lurus 10 km sepanjang +Z
+  const STEP = 5, n = 2001; const pts = [], tang = [], norm = [];
+  for (let i = 0; i < n; i++) { pts.push(new THREE.Vector3(0, 0, i * STEP)); tang.push(new THREE.Vector3(0, 0, 1)); norm.push(new THREE.Vector3(-1, 0, 0)); }
+  const len = (n - 1) * STEP;
 
   // aspal
   const pos = [], uv = [], idx = [];
   let acc = 0;
-  for (let i = 0; i <= n; i++) {
-    const k = i % n; const p = pts[k], nr = norm[k];
+  for (let i = 0; i < n; i++) {
+    const k = i; const p = pts[k], nr = norm[k];
     pos.push(p.x - nr.x * TRACK_W / 2, 0.02, p.z - nr.z * TRACK_W / 2, p.x + nr.x * TRACK_W / 2, 0.02, p.z + nr.z * TRACK_W / 2);
-    uv.push(0, acc / 6, 1, acc / 6); acc += len / n;
-    if (i < n) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+    uv.push(0, acc / 6, 1, acc / 6); acc += STEP;
+    if (i < n - 1) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
   }
   const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); rg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); rg.setIndex(idx); rg.computeVertexNormals();
   const roadTex = makeRoadTex(); roadTex.wrapS = roadTex.wrapT = THREE.RepeatWrapping; roadTex.anisotropy = 8;
   const road = new THREE.Mesh(rg, new THREE.MeshStandardMaterial({ map: roadTex, roughness: 0.92, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })); road.position.y = 0.06; road.receiveShadow = true; scene.add(road);
 
   // tanah
-  const gt = makeGrassTex(); gt.wrapS = gt.wrapT = THREE.RepeatWrapping; gt.repeat.set(400, 400);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), new THREE.MeshStandardMaterial({ map: gt, roughness: 1 })); ground.rotation.x = -Math.PI / 2; ground.position.set(100, 0, 150); ground.receiveShadow = true; scene.add(ground);
+  const gt = makeGrassTex(); gt.wrapS = gt.wrapT = THREE.RepeatWrapping; gt.repeat.set(300, 1200);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(3000, 12000), new THREE.MeshStandardMaterial({ map: gt, roughness: 1 })); ground.rotation.x = -Math.PI / 2; ground.position.set(0, 0, 5000); ground.receiveShadow = true; scene.add(ground);
 
   // curb merah-putih + pagar
   const curbG = new THREE.BoxGeometry(0.5, 0.16, 1.2);
@@ -53,16 +50,16 @@ export function buildWorld(scene) {
   rails.count = ri; rails.castShadow = true; scene.add(rails);
 
   // pohon & gedung & lampu (instanced)
-  const near = (x, z) => { let md = 1e9; for (let i = 0; i < n; i += 6) { const dx = pts[i].x - x, dz = pts[i].z - z; const d = dx * dx + dz * dz; if (d < md) md = d; } return Math.sqrt(md); };
+  const near = (x) => Math.abs(x);
   const trunkG = new THREE.CylinderGeometry(0.25, 0.35, 3, 6), leafG = new THREE.ConeGeometry(2.2, 6, 8);
-  const trunk = new THREE.InstancedMesh(trunkG, new THREE.MeshStandardMaterial({ color: 0x5a3b22 }), 700), leaf = new THREE.InstancedMesh(leafG, new THREE.MeshStandardMaterial({ color: 0x2f7a3a, roughness: 0.9 }), 700);
+  const trunk = new THREE.InstancedMesh(trunkG, new THREE.MeshStandardMaterial({ color: 0x5a3b22 }), 2500), leaf = new THREE.InstancedMesh(leafG, new THREE.MeshStandardMaterial({ color: 0x2f7a3a, roughness: 0.9 }), 2500);
   let ti = 0;
-  for (let k = 0; k < 2500 && ti < 700; k++) { const x = -420 + R() * 900, z = -150 + R() * 650; if (near(x, z) < TRACK_W / 2 + 12) continue; const sc = 0.8 + R() * 0.9; m4.compose(new THREE.Vector3(x, 1.5 * sc, z), q.identity(), new THREE.Vector3(sc, sc, sc)); trunk.setMatrixAt(ti, m4); m4.compose(new THREE.Vector3(x, 5.5 * sc, z), q.identity(), new THREE.Vector3(sc, sc, sc)); leaf.setMatrixAt(ti, m4); ti++; }
+  for (let k = 0; k < 9000 && ti < 2500; k++) { const x = -160 + R() * 320, z = -60 + R() * 10100; if (near(x) < TRACK_W / 2 + 12) continue; const sc = 0.8 + R() * 0.9; m4.compose(new THREE.Vector3(x, 1.5 * sc, z), q.identity(), new THREE.Vector3(sc, sc, sc)); trunk.setMatrixAt(ti, m4); m4.compose(new THREE.Vector3(x, 5.5 * sc, z), q.identity(), new THREE.Vector3(sc, sc, sc)); leaf.setMatrixAt(ti, m4); ti++; }
   trunk.count = leaf.count = ti; trunk.castShadow = leaf.castShadow = true; scene.add(trunk, leaf);
 
   const bG = new THREE.BoxGeometry(1, 1, 1); const bTex = makeWindowTex();
-  const blds = new THREE.InstancedMesh(bG, new THREE.MeshStandardMaterial({ map: bTex, roughness: 0.8 }), 160); let bi = 0;
-  for (let k = 0; k < 900 && bi < 160; k++) { const x = -420 + R() * 900, z = -150 + R() * 650; if (near(x, z) < TRACK_W / 2 + 22) continue; const w = 10 + R() * 22, d = 10 + R() * 22, h = 8 + R() * 40; const c = new THREE.Color().setHSL(0.08 + R() * 0.1, 0.12, 0.45 + R() * 0.3); m4.compose(new THREE.Vector3(x, h / 2, z), q.identity(), new THREE.Vector3(w, h, d)); blds.setMatrixAt(bi, m4); blds.setColorAt(bi, c); bi++; }
+  const blds = new THREE.InstancedMesh(bG, new THREE.MeshStandardMaterial({ map: bTex, roughness: 0.8 }), 500); let bi = 0;
+  for (let k = 0; k < 4000 && bi < 500; k++) { const x = -190 + R() * 380, z = -60 + R() * 10100; if (near(x) < TRACK_W / 2 + 22) continue; const w = 10 + R() * 22, d = 10 + R() * 22, h = 8 + R() * 40; const c = new THREE.Color().setHSL(0.08 + R() * 0.1, 0.12, 0.45 + R() * 0.3); m4.compose(new THREE.Vector3(x, h / 2, z), q.identity(), new THREE.Vector3(w, h, d)); blds.setMatrixAt(bi, m4); blds.setColorAt(bi, c); bi++; }
   blds.count = bi; blds.castShadow = true; blds.receiveShadow = true; scene.add(blds);
 
   const poleG = new THREE.CylinderGeometry(0.1, 0.14, 8, 6); const poles = new THREE.InstancedMesh(poleG, new THREE.MeshStandardMaterial({ color: 0x555a60 }), 200);
@@ -78,15 +75,17 @@ export function buildWorld(scene) {
   const bn = new THREE.Mesh(new THREE.BoxGeometry(TRACK_W + 3, 1.6, 0.5), new THREE.MeshStandardMaterial({ map: makeBannerTex(), emissive: 0x222222 })); bn.position.y = 7.6; gate.add(bn);
   gate.position.copy(pts[0]); gate.rotation.y = Math.atan2(tang[0].x, tang[0].z); scene.add(gate);
 
+  // garis finish drag 400 m dan tiang penanda tiap 100 m
+  const fin = new THREE.Mesh(new THREE.PlaneGeometry(TRACK_W, 2.4), new THREE.MeshBasicMaterial({ map: makeCheckerTex() })); fin.rotation.x = -Math.PI / 2; fin.position.set(0, 0.09, 400); scene.add(fin);
+  const mk = new THREE.InstancedMesh(new THREE.BoxGeometry(0.5, 2.2, 0.3), new THREE.MeshStandardMaterial({ color: 0xffffff }), 200);
+  for (let d = 1; d <= 100; d++) for (const sd of [-1, 1]) { m4.compose(new THREE.Vector3(sd * (TRACK_W / 2 + 1.8), 1.1, d * 100), q.identity(), s1); mk.setMatrixAt((d - 1) * 2 + (sd > 0 ? 1 : 0), m4); }
+  scene.add(mk);
   return { pts, tang, norm, n, len, nearest, start: { pos: pts[0].clone(), heading: Math.atan2(tang[0].x, tang[0].z) } };
 
-  // cari titik jalur terdekat (pencarian lokal dari indeks sebelumnya)
-  function nearest(x, z, hint) {
-    let best = 1e18, bi2 = 0;
-    const range = hint == null ? n : 40; const from = hint == null ? 0 : hint - 20;
-    for (let k = 0; k < range; k++) { const i = (((from + k) % n) + n) % n; const dx = pts[i].x - x, dz = pts[i].z - z; const d = dx * dx + dz * dz; if (d < best) { best = d; bi2 = i; } }
-    const nr = norm[bi2]; const side = (x - pts[bi2].x) * nr.x + (z - pts[bi2].z) * nr.z;
-    return { i: bi2, dist: Math.sqrt(best), side };
+  // jalan lurus: titik terdekat langsung dari z
+  function nearest(x, z) {
+    const i = Math.max(0, Math.min(n - 1, Math.round(z / STEP)));
+    return { i, dist: Math.abs(x), side: -x };
   }
 }
 
