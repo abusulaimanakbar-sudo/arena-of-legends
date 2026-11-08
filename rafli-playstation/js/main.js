@@ -71,7 +71,7 @@ renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadow
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.1;
 const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0a0b14);
 const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 140);
-const orbit = { az: 0.18, el: 0.8, dist: 24, tx: 0, tz: 0.8 };
+const orbit = { az: 0.18, el: 0.78, dist: 22, tx: 0, tz: 0.6 };
 
 const hemi = new THREE.HemisphereLight(0xaab4ff, 0x2a2030, 0.8); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff0dd, 1.5); sun.position.set(6, 18, 12); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
@@ -587,8 +587,18 @@ function tap(e) {
   if (best) { selected = best.i; tab = 'st'; audio.click(); renderAll(); if (!S.st[best.i].o && S.money >= SLOT_COST[best.i]) buy('slot' + best.i); }
 }
 
-function onResize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.fov = innerWidth < 700 ? 60 : 42; camera.updateProjectionMatrix(); }
-addEventListener('resize', onResize);
+function onResize() {
+  const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.fov = h < 520 ? 52 : w < 700 ? 56 : 42;
+  const side = $('side'); const open = !side.classList.contains('closed'); const sw = open ? side.getBoundingClientRect().width + 8 : 0;
+  document.body.classList.toggle('noside', !open);
+  if (sw > 0 && w > 600) camera.setViewOffset(w, h, sw / 2, 0, w, h); else camera.clearViewOffset();
+  camera.updateProjectionMatrix();
+  const portrait = h > w && (matchMedia('(pointer:coarse)').matches || w < 700); $('rotate').classList.toggle('hidden', !portrait);
+}
+addEventListener('resize', onResize); addEventListener('orientationchange', () => setTimeout(onResize, 200));
+$('btnSide').onclick = () => { $('side').classList.toggle('closed'); onResize(); audio.init(); audio.click(); };
+$('btnFull').onclick = () => { try { const el = document.documentElement; if (document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen().then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {}); } catch (e) { /* abaikan */ } };
+addEventListener('pointerdown', () => { try { if (screen.orientation && screen.orientation.lock && matchMedia('(pointer:coarse)').matches) screen.orientation.lock('landscape').catch(() => {}); } catch (e) { /* abaikan */ } }, { once: true });
 
 // ================= LOOP =================
 let arrive = 3, saveT = 0, uiT = 0, last = performance.now(), blipT = 0, qT = 0;
@@ -635,6 +645,7 @@ if (!S.qs) S.qs = genQuests(S.ep);
 { const away = (Date.now() - (S.seen || Date.now())) / 1000;
   if (away > 60 && S.life > 0) { const per = S.st.filter((x) => x.o).reduce((a, d) => a + personIncome(d) * 1.4 / (sessionLen() + 6), 0) * 0.5; const amt = Math.floor(per * Math.min(away, 8 * 3600)); if (amt > 0) { S.money += amt; S.run += amt; S.life += amt; $('welcomeTxt').textContent = `Toko tetap buka ${Math.round(away / 60)} menit dan menghasilkan ${money(amt)}.`; $('welcome').classList.remove('hidden'); } } }
 $('welcomeOk').onclick = () => { audio.init(); $('welcome').classList.add('hidden'); audio.cash(); };
+if (innerHeight < 520) { orbit.dist = 16.5; orbit.el = 0.82; }
 stations.forEach(buildStation); buildDecor(); syncStaff(); syncPrefs(); renderAll(); onResize();
 addEventListener('pointerdown', () => { audio.init(); audio.setMusic(S.music); audio.setSfx(S.sfx); }, { once: true });
 addEventListener('keydown', () => { audio.init(); audio.setMusic(S.music); audio.setSfx(S.sfx); }, { once: true });
