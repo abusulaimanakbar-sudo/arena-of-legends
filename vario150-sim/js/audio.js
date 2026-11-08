@@ -1,31 +1,10 @@
-// Mesin suara berlapis dari rekaman asli: idle → langsam → gas dikit → jalan → tengah → atas
-// Tiap lapisan diputar dengan pitch = rpm / rpm-dasar, lalu di-crossfade (equal-power) menurut RPM sehingga mulus.
-
-// base = rpm perkiraan saat rekaman dibuat (pitch normal), c = titik tengah lapisan pada skala rpm
+// Mesin suara: tiap mode = SATU rekaman saja (tidak digabung). Nada naik halus dari idle sampai limiter.
 const LAYERS = [
-  // Mode 1: rekaman awal (idle + saat jalan)
-  { id: 'idle', mode: 1, url: 'assets/idle.mp3', base: 1100, c: 1100 },
-  { id: 'jalan', mode: 1, url: 'assets/run.mp3', base: 5600, c: 5000 },
-  // Mode 2: rekaman langsam → gas dikit → atas
-  { id: 'langsam', mode: 2, url: 'assets/lang1.mp3', base: 1500, c: 1500 },
-  { id: 'dikit', mode: 2, url: 'assets/lang2.mp3', base: 3200, c: 3200 },
-  { id: 'atas', mode: 2, url: 'assets/high.mp3', base: 11000, c: 8500 },
+  { id: 'mode1', mode: 1, url: 'assets/mode1.mp3' }, // rekaman langsam 1
+  { id: 'mode2', mode: 2, url: 'assets/mode2.mp3' }, // rekaman langsam 2
 ];
-
-
-// bobot lapisan menurut rpm (segitiga pada skala log, jumlah daya = 1)
-export function layerWeights(rpm, mode = 1) {
-  const w = new Array(LAYERS.length).fill(0);
-  const idx = LAYERS.map((l, i) => (l.mode === mode ? i : -1)).filter((i) => i >= 0);
-  const n = idx.length; const C = (k) => LAYERS[idx[k]].c;
-  if (rpm <= C(0)) { w[idx[0]] = 1; return w; }
-  if (rpm >= C(n - 1)) { w[idx[n - 1]] = 1; return w; }
-  for (let k = 0; k < n - 1; k++) {
-    const a = C(k), b = C(k + 1);
-    if (rpm >= a && rpm <= b) { const f = Math.log(rpm / a) / Math.log(b / a); w[idx[k]] = Math.cos(f * Math.PI / 2); w[idx[k + 1]] = Math.sin(f * Math.PI / 2); break; }
-  }
-  return w;
-}
+// rate pemutaran pada idle dan pada limiter (pemetaan linear sepanjang rentang gas)
+const RATE_IDLE = 0.8, RATE_LIMIT = 2.0;
 
 export class EngineAudio {
   constructor() { this.ctx = null; this.ready = false; this.loading = null; this.muted = false; this.layers = []; }
@@ -49,18 +28,19 @@ export class EngineAudio {
   resume() { if (this.ctx && this.ctx.state !== 'running') this.ctx.resume(); }
   setMuted(m) { this.muted = m; if (this.master) this.master.gain.setTargetAtTime(m ? 0 : 1.0, this.ctx.currentTime, 0.05); }
 
-  // st: {rpm, throttle, setup}. Hanya rekaman milik mode terpilih; nada mengikuti rpm, level mengikuti gas.
+  // st: {rpm, throttle, setup}. Hanya rekaman mode terpilih; nada mengikuti rpm (idle → limit), level mengikuti gas.
   update(dt, st) {
     if (!this.ready) return;
     const t = this.ctx.currentTime, setup = st.setup;
-    const rpm = Math.max(500, st.rpm), thr = st.throttle;
+    const idle = st.eng.idleRpm, limit = setup.ecu.limit;
+    const f = Math.min(1.05, Math.max(0, (st.rpm - idle) / Math.max(1, limit - idle)));
+    const rate = RATE_IDLE + (RATE_LIMIT - RATE_IDLE) * f;
     const vol = setup.ecu.volume ?? 1.2;
     const mode = setup.ecu.soundMode === 2 ? 2 : 1;
-    const w = layerWeights(rpm, mode);
-    const load = 0.75 + 0.25 * thr;
-    this.layers.forEach((L, i) => {
-      L.s.playbackRate.setTargetAtTime(Math.min(2.6, Math.max(0.5, rpm / L.base)), t, 0.04);
-      L.g.gain.setTargetAtTime(w[i] * vol * load * 0.7, t, 0.04);
+    const load = 0.8 + 0.2 * st.throttle;
+    this.layers.forEach((L) => {
+      L.s.playbackRate.setTargetAtTime(rate, t, 0.05);
+      L.g.gain.setTargetAtTime(L.mode === mode ? vol * load * 0.7 : 0, t, 0.06);
     });
   }
 

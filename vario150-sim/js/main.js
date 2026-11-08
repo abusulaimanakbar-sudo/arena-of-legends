@@ -106,7 +106,7 @@ function ecuHtml() {
   h += `<div class="note" id="afrNote">${afrNote(e.afr)}</div>`;
   h += slider('idle', 'RPM Idle', e.idle, L.idle.min, L.idle.max, L.idle.step, L.idle.unit, 'ecu');
   h += slider('limit', 'Pembatas Putaran (Limiter)', e.limit, L.limit.min, L.limit.max, L.limit.step, L.limit.unit, 'ecu');
-  h += `<div class="grp"><h3>Mode Suara ECU</h3><p>Pilih paket rekaman yang dipakai ECU. Tiap mode berdiri sendiri (tidak dicampur).</p><div class="opts"><button class="opt ${e.soundMode !== 2 ? 'sel' : ''}" data-mode="1"><span>Mode 1 — Idle + Jalan</span><small>rekaman awal</small></button><button class="opt ${e.soundMode === 2 ? 'sel' : ''}" data-mode="2"><span>Mode 2 — Langsam → Gas Dikit → Atas</span><small>3 tahap</small></button></div></div>`;
+  h += `<div class="grp"><h3>Mode Suara ECU</h3><p>Tiap mode memakai satu rekaman saja dari idle sampai limiter (tidak digabung).</p><div class="opts"><button class="opt ${e.soundMode !== 2 ? 'sel' : ''}" data-mode="1"><span>Mode 1 — Rekaman Langsam 1</span><small>1 suara, idle → limit</small></button><button class="opt ${e.soundMode === 2 ? 'sel' : ''}" data-mode="2"><span>Mode 2 — Rekaman Langsam 2</span><small>1 suara, idle → limit</small></button></div></div>`;
   h += slider('volume', 'Volume Suara', e.volume ?? 1.2, 0.3, 2.5, 0.1, '×', 'ecu');
   h += '</div>';
   return h;
@@ -264,7 +264,7 @@ function updateGarage(dt) {
   garageRpm += (tgt - garageRpm) * Math.min(1, dt * (rev ? 3.2 : 2.2));
   if (rev && garageRpm > setup.ecu.limit) garageRpm = setup.ecu.limit;
   const lim = rev && garageRpm >= setup.ecu.limit - 5;
-  audio.update(dt, { rpm: garageRpm, throttle: thr, setup });
+  audio.update(dt, { rpm: garageRpm, throttle: thr, setup, eng });
   if (orbit.auto) orbit.az += dt * 0.25;
   const target = new THREE.Vector3(0, 0.5, 0);
   camera.position.set(Math.sin(orbit.az) * Math.cos(orbit.el) * orbit.dist, 0.4 + Math.sin(orbit.el) * orbit.dist, Math.cos(orbit.az) * Math.cos(orbit.el) * orbit.dist);
@@ -333,7 +333,7 @@ function updateDrive(dt) {
   camera.lookAt(look); camera.fov = 52 + Math.min(18, ps.v * 0.35); camera.updateProjectionMatrix();
 
   // suara
-  audio.update(dt, { rpm: ps.rpm, throttle: inp.thr ? 1 : ps.thr, setup });
+  audio.update(dt, { rpm: ps.rpm, throttle: inp.thr ? 1 : ps.thr, setup, eng });
   // HUD
   uiAcc += dt; if (uiAcc > 0.03) { uiAcc = 0; $('spd').textContent = Math.round(kmh); $('rpmTxt').textContent = `${Math.round(ps.rpm / 10) * 10} rpm · CVT ${(ps.G / (9 * 0.88 * 1)).toFixed(2)}:1`; $('lap').textContent = lap.n; $('tLap').textContent = fmt(lap.t); drawTach(ps.rpm, setup.ecu.limit, ps.limiter); }
 }
