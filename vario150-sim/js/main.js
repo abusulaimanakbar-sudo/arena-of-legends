@@ -264,7 +264,7 @@ function updateGarage(dt) {
   garageRpm += (tgt - garageRpm) * Math.min(1, dt * (rev ? 3.2 : 2.2));
   if (rev && garageRpm > setup.ecu.limit) garageRpm = setup.ecu.limit;
   const lim = rev && garageRpm >= setup.ecu.limit - 5;
-  audio.update(dt, { rpm: garageRpm, throttle: thr, setup, eng });
+  audio.update(dt, { rpm: garageRpm, throttle: thr, speed: 0, setup, eng });
   if (orbit.auto) orbit.az += dt * 0.25;
   const target = new THREE.Vector3(0, 0.5, 0);
   camera.position.set(Math.sin(orbit.az) * Math.cos(orbit.el) * orbit.dist, 0.4 + Math.sin(orbit.el) * orbit.dist, Math.cos(orbit.az) * Math.cos(orbit.el) * orbit.dist);
@@ -333,7 +333,7 @@ function updateDrive(dt) {
   camera.lookAt(look); camera.fov = 52 + Math.min(18, ps.v * 0.35); camera.updateProjectionMatrix();
 
   // suara
-  audio.update(dt, { rpm: ps.rpm, throttle: inp.thr ? 1 : ps.thr, setup, eng });
+  audio.update(dt, { rpm: ps.rpm, throttle: inp.thr ? 1 : ps.thr, speed: ps.v, setup, eng });
   // HUD
   uiAcc += dt; if (uiAcc > 0.03) { uiAcc = 0; $('spd').textContent = Math.round(kmh); $('rpmTxt').textContent = `${Math.round(ps.rpm / 10) * 10} rpm · CVT ${(ps.G / (9 * 0.88 * 1)).toFixed(2)}:1`; $('lap').textContent = lap.n; $('tLap').textContent = fmt(lap.t); drawTach(ps.rpm, setup.ecu.limit, ps.limiter); }
 }
