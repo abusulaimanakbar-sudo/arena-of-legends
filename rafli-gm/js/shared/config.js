@@ -16,7 +16,7 @@ export const DEFAULT_CFG = {
     kasir: { costs: [60000, 350000, 1800000] }, staff: { costs: [250000, 1400000, 7000000] }, cctv: { costs: [150000, 700000, 3000000] }, genset: { costs: [400000] },
   },
   branch: { costs: [6000000, 25000000, 90000000], names: ['Cabang Timur', 'Cabang Barat', 'Cabang Belakang'], mult: 0.3, lvlBonus: 0.1, upgBase: 3000000, upgGrowth: 1.7 },
-  costs: { elecBase: 120, elecTier: 80, elecTv: 50, rentBase: 9000, rentStation: 6000, rentBranch: 25000, salStaff: 16000, salKasir: 5000, salKantin: 10000, salCctv: 3000, mktUpkeep: 2000, stickBase: 12000, stickTier: 0.5 },
+  costs: { elecBase: 120, elecTier: 80, elecTv: 50, rentBase: 9000, rentStation: 6000, rentBranch: 25000, salStaff: 16000, salKasir: 5000, salKantin: 10000, salCctv: 3000, mktUpkeep: 2000, stickBase: 12000, stickTier: 0.5, elecPct: 0.03, upkeepRate: 0.012, tax: 0.06, salPct: 0.08, rentTier: 0.15 },
   rep: { ac: 0.55, decor: 0.45, snack: 0.12, lobby: 0.15, tier: 0.25, sat: 1.2 },
   cust: {
     arrivalBase: 7.5, arrivalMin: 0.9, mktArrival: 0.12, repBase: 0.65, repArrival: 0.15, hourRush: 1.5, hourNoon: 1.15, hourNight: 0.45, weekend: 1.3, rainMult: 0.75, rombonganMult: 1.6,
@@ -105,6 +105,7 @@ export const SCHEMA = [
     N('costs.elecBase', 'Listrik per sesi (dasar)', 0, 100000, 10, 'Rp'), N('costs.elecTier', 'Listrik tambahan per tingkat konsol', 0, 100000, 10, 'Rp'), N('costs.elecTv', 'Listrik tambahan per tingkat TV', 0, 100000, 10, 'Rp'),
     N('costs.rentBase', 'Sewa tempat per hari (dasar)', 0, 1e7, 500, 'Rp'), N('costs.rentStation', 'Sewa tambahan per stasiun / hari', 0, 1e7, 500, 'Rp'), N('costs.rentBranch', 'Sewa tambahan per cabang / hari', 0, 1e8, 1000, 'Rp'),
     N('costs.salStaff', 'Gaji pegawai per hari', 0, 1e7, 500, 'Rp'), N('costs.salKasir', 'Gaji kasir per level / hari', 0, 1e7, 500, 'Rp'), N('costs.salKantin', 'Gaji koki & pelayan kantin / hari', 0, 1e7, 500, 'Rp'), N('costs.salCctv', 'Biaya CCTV per level / hari', 0, 1e7, 500, 'Rp'), N('costs.mktUpkeep', 'Biaya iklan per level / hari', 0, 1e7, 500, 'Rp'),
+    N('costs.elecPct', 'Listrik tambahan (% dari pendapatan sesi)', 0, 0.5, 0.005, '×'), N('costs.upkeepRate', 'Perawatan & penyusutan aset per hari (% nilai aset)', 0, 0.2, 0.001, '×'), N('costs.tax', 'Pajak usaha (% dari pendapatan kotor harian)', 0, 0.6, 0.005, '×'), N('costs.salPct', 'Gaji & bonus SDM (% pendapatan kotor, dikali jumlah karyawan)', 0, 0.6, 0.005, '×'), N('costs.rentTier', 'Sewa naik per tingkat konsol+TV stasiun', 0, 2, 0.01, '×'),
     N('costs.stickBase', 'Ganti stik rusak (dasar)', 0, 1e6, 500, 'Rp'), N('costs.stickTier', 'Tambahan biaya stik per tingkat konsol', 0, 5, 0.1, '×'),
   ] },
   { id: 'cust', icon: '🧍', title: 'Pelanggan & Kedatangan', fields: [

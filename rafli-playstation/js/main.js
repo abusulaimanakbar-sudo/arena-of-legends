@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GameAudio } from './audio.js';
-import { std, canvasTex, emojiSprite, textSprite, dialogSprite, makeConsole, makeSofa, makeChair, makeFood, makePerson, attachController, detachController, poseWalk, poseStand, poseSitPlay, poseCheer, poseType, applyGesture } from './models.js';
+import { mergeByMaterial, std, canvasTex, emojiSprite, textSprite, dialogSprite, makeConsole, makeSofa, makeChair, makeFood, makePerson, attachController, detachController, poseWalk, poseStand, poseSitPlay, poseCheer, poseType, applyGesture } from './models.js';
 import { buildWorld, BAYS } from './world.js';
 import { NAMES, LINES, pick, newTrait } from './dialog.js';
 import { DEFAULT_CFG, merge, clone, setPath } from './shared/config.js';
@@ -9,6 +9,8 @@ import { createLink, DEFAULT_SERVER, newRoom } from './shared/sync.js';
 const $ = (id) => document.getElementById(id);
 const SAVE = 'rafli-ps-save-v3';
 const audio = new GameAudio();
+const lsGet = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* abaikan */ } };
 let TS = Math.max(1, Math.min(12, +(new URLSearchParams(location.search).get('speed') || 1)));
 
 // ================= DATA & EKONOMI =================
@@ -44,14 +46,14 @@ const STAFF = [
   { id: 'genset', name: '⚡ Genset Listrik', lvKey: 'genset', get max() { return upMax('genset'); }, cost: (l) => upCost('genset', l), desc: 'Saat listrik padam, genset otomatis menyala.', eff: (l) => (l ? 'Terpasang' : 'Belum ada') },
 ];
 
-const NEWD = () => ({ inc: 0, kantin: 0, tip: 0, elec: 0, rent: 0, sal: 0, cogs: 0, broken: 0, theft: 0 });
+const NEWD = () => ({ inc: 0, kantin: 0, tip: 0, elec: 0, rent: 0, sal: 0, cogs: 0, broken: 0, theft: 0, upkeep: 0, tax: 0 });
 let S = defaultState();
 function defaultState() {
   return { money: 0, run: 0, life: 0, st: Array.from({ length: NSLOT }, (_, i) => ({ o: i < 2 ? 1 : 0, c: 0, t: 0, l: 0, s: 0 })), mkt: 0, train: 0, snack: 0, ac: 0, decor: 0, lobby: 0, kasir: 0, staff: 0, cctv: 0, genset: 0,
-    br: [{ o: 0, l: 0 }, { o: 0, l: 0 }, { o: 0, l: 0 }], regs: [], d: NEWD(), y: NEWD(), stars: 0, ep: 0, qs: null, qp: { earn: 0, served: 0, upg: 0, vip: 0 }, sat: 0.8, ach: {}, cnt: { tap: 0, fix: 0, hh: 0, theft: 0, orders: 0 }, tut: 0,
+    br: [{ o: 0, l: 0 }, { o: 0, l: 0 }, { o: 0, l: 0 }], regs: [], d: NEWD(), y: NEWD(), tot: NEWD(), hist: [], stars: 0, ep: 0, qs: null, qp: { earn: 0, served: 0, upg: 0, vip: 0 }, sat: 0.8, ach: {}, cnt: { tap: 0, fix: 0, hh: 0, theft: 0, orders: 0 }, tut: 0,
     hhUntil: 0, hhReady: 0, clock: DEFAULT_CFG.time.startHour, day: 1, seen: Date.now(), served: 0, music: true, sfx: true, franchises: 0 };
 }
-function load() { try { const s = JSON.parse(localStorage.getItem(SAVE)); if (s && s.st && s.st.length === NSLOT) { const d = defaultState(); S = { ...d, ...s, qp: { ...d.qp, ...(s.qp || {}) }, cnt: { ...d.cnt, ...(s.cnt || {}) }, d: { ...d.d, ...(s.d || {}) }, y: { ...d.y, ...(s.y || {}) }, br: s.br && s.br.length === 3 ? s.br : d.br }; } } catch (e) { /* abaikan */ } }
+function load() { try { const s = JSON.parse(localStorage.getItem(SAVE)); if (s && s.st && s.st.length === NSLOT) { const d = defaultState(); S = { ...d, ...s, qp: { ...d.qp, ...(s.qp || {}) }, cnt: { ...d.cnt, ...(s.cnt || {}) }, d: { ...d.d, ...(s.d || {}) }, y: { ...d.y, ...(s.y || {}) }, tot: { ...d.tot, ...(s.tot || {}) }, hist: Array.isArray(s.hist) ? s.hist : [], br: s.br && s.br.length === 3 ? s.br : d.br }; } } catch (e) { /* abaikan */ } }
 function save() { try { S.seen = Date.now(); localStorage.setItem(SAVE, JSON.stringify(S)); } catch (e) { /* abaikan */ } }
 
 // ---- turunan ----
@@ -69,8 +71,10 @@ const hourFactor = () => { const h = S.clock; let f = 1; if (h >= 16 && h < 22) 
 const arrivalEvery = () => Math.max(CFG.cust.arrivalMin, CFG.cust.arrivalBase / ((1 + S.mkt * CFG.cust.mktArrival) * (CFG.cust.repBase + CFG.cust.repArrival * rep()) * hourFactor() * (hhActive() ? CFG.hh.arrivalMult : 1) * (Date.now() < eventUntil && eventName === 'rombongan' ? CFG.cust.rombonganMult : 1) * (Date.now() < rainUntil ? CFG.cust.rainMult : 1)));
 const patienceBase = () => CFG.cust.patience * (1 + S.ac * CFG.cust.patAc + S.lobby * CFG.cust.patLobby + S.staff * CFG.cust.patStaff);
 const elecCost = (d) => CFG.costs.elecBase + CFG.costs.elecTier * d.c + CFG.costs.elecTv * d.t;
-const dailyRent = () => CFG.costs.rentBase + CFG.costs.rentStation * stationsOwned() + CFG.costs.rentBranch * branchCount();
-const dailySalary = () => S.staff * CFG.costs.salStaff + S.kasir * CFG.costs.salKasir + (S.snack > 0 ? CFG.costs.salKantin : 0) + S.cctv * CFG.costs.salCctv + S.mkt * CFG.costs.mktUpkeep;
+const dailyRent = () => CFG.costs.rentBase + S.st.reduce((a, d) => a + (d.o ? CFG.costs.rentStation * (1 + CFG.costs.rentTier * (d.c + d.t)) : 0), 0) + CFG.costs.rentBranch * branchCount();
+const assetValue = () => S.st.reduce((a, d, i) => a + (d.o ? SLOT_COST[i] + CONSOLES.slice(0, d.c + 1).reduce((x, c) => x + c.cost, 0) + TVS.slice(0, d.t + 1).reduce((x, c) => x + c.cost, 0) + SOFAS.slice(0, d.s + 1).reduce((x, c) => x + c.cost, 0) : 0), 0);
+const headcount = () => S.staff + S.kasir + (S.snack > 0 ? 1 : 0) + S.cctv;
+const dailyPayrollFlat = () => S.staff * CFG.costs.salStaff + S.kasir * CFG.costs.salKasir + (S.snack > 0 ? CFG.costs.salKantin : 0) + S.cctv * CFG.costs.salCctv + S.mkt * CFG.costs.mktUpkeep;
 const memberLvl = (r) => { const v = CFG.eco.regVisits; return r.visits >= v[2] ? 3 : r.visits >= v[1] ? 2 : r.visits >= v[0] ? 1 : 0; };
 const MEMBER = ['Pelanggan Baru', '🥈 Member Silver', '🥇 Member Gold', '💎 Member Platinum'];
 const menuPrice = (m) => Math.round(m.price * (1 + Math.max(0, S.snack - 1) * CFG.eco.kantinStep));
@@ -82,20 +86,22 @@ function money(n) {
   return (neg ? '-' : '') + 'Rp ' + n;
 }
 const incomeWin = [];
-function earn(a, cat = 'inc') { S.money += a; S.run += a; S.life += a; if (cat !== 'kantin') S.qp.earn += a; S.d[cat] += a; incomeWin.push([performance.now(), a]); }
-function spend(a, cat) { S.money = Math.max(0, S.money - a); S.d[cat] += a; }
-const dayProfit = (d) => d.inc + d.kantin + d.tip - d.elec - d.rent - d.sal - d.cogs - d.broken;
+function earn(a, cat = 'inc') { S.money += a; S.run += a; S.life += a; if (cat !== 'kantin') S.qp.earn += a; S.d[cat] += a; S.tot[cat] += a; incomeWin.push([performance.now(), a]); }
+function spend(a, cat) { S.money = Math.max(0, S.money - a); S.d[cat] += a; S.tot[cat] += a; }
+const grossOf = (d) => d.inc + d.kantin + d.tip, costOf = (d) => d.elec + d.rent + d.sal + d.cogs + d.broken + (d.upkeep || 0) + (d.tax || 0);
+const dayProfit = (d) => grossOf(d) - costOf(d);
 function incomeRate() { const nowT = performance.now(); while (incomeWin.length && nowT - incomeWin[0][0] > 20000 / TS) incomeWin.shift(); return incomeWin.reduce((a, b) => a + b[1], 0) / (20 / TS); }
 
 // ================= THREE: scene =================
-const renderer = new THREE.WebGLRenderer({ canvas: $('gl'), antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const COARSE = matchMedia('(pointer:coarse)').matches;
+const renderer = new THREE.WebGLRenderer({ canvas: $('gl'), antialias: !COARSE, powerPreference: 'high-performance' });
+renderer.setPixelRatio(COARSE ? 0.8 : 1);
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap; renderer.shadowMap.autoUpdate = false;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.15;
 const scene = new THREE.Scene(); scene.background = new THREE.Color(0x8cc4f0); scene.fog = new THREE.Fog(0x8cc4f0, 70, 330);
 const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 900);
 const hemi = new THREE.HemisphereLight(0xaab4ff, 0x3a3a30, 0.9); scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xfff0dd, 1.6); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+const sun = new THREE.DirectionalLight(0xfff0dd, 1.6); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024);
 Object.assign(sun.shadow.camera, { left: -34, right: 34, top: 30, bottom: -30, near: 1, far: 120 }); scene.add(sun, sun.target);
 const world = buildWorld(scene);
 
@@ -107,9 +113,9 @@ const floor = new THREE.Mesh(new THREE.PlaneGeometry(HX * 2, HZ * 2), std(0xffff
 const wallTex = canvasTex(512, 256, (g, w, h) => { g.fillStyle = '#323760'; g.fillRect(0, 0, w, h); for (let i = 0; i < 32; i++) { g.fillStyle = i % 2 ? '#383d68' : '#2d3256'; g.fillRect(i * 16, 0, 16, h); } });
 wallTex.wrapS = THREE.RepeatWrapping; wallTex.repeat.set(6, 1);
 const walls = [];
-function addWall(w, h, d, x, y, z, key) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.9, transparent: true })); m.position.set(x, y, z); m.receiveShadow = true; room.add(m); walls.push({ m, key }); }
+function addWall(w, h, d, x, y, z, key) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshLambertMaterial({ map: wallTex, transparent: true })); m.position.set(x, y, z); m.receiveShadow = true; room.add(m); walls.push({ m, key }); }
 addWall(HX * 2 + 0.3, 4.6, 0.3, 0, 2.3, -HZ, 'back'); addWall(0.3, 4.6, HZ * 2, -HX, 2.3, 0, 'left'); addWall(0.3, 4.6, HZ * 2, HX, 2.3, 0, 'right');
-const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x9db8ff, transparent: true, opacity: 0.14, roughness: 0.05, metalness: 0.1 });
+const glassMat = new THREE.MeshLambertMaterial({ color: 0x9db8ff, transparent: true, opacity: 0.14, depthWrite: false });
 const frameMat = std(0x0e1020, { metalness: 0.4 });
 for (const [x0, x1] of [[-HX, -1.5], [1.5, HX]]) { const w = x1 - x0; const gl = new THREE.Mesh(new THREE.BoxGeometry(w, 3.8, 0.05), glassMat); gl.position.set((x0 + x1) / 2, 1.9, HZ); room.add(gl); const fr = new THREE.Mesh(new THREE.BoxGeometry(w + 0.1, 0.16, 0.12), frameMat); fr.position.set((x0 + x1) / 2, 3.85, HZ); room.add(fr); const fb = fr.clone(); fb.position.y = 0.08; room.add(fb); for (let x = x0 + 3; x < x1; x += 3) { const pl = new THREE.Mesh(new THREE.BoxGeometry(0.08, 3.8, 0.1), frameMat); pl.position.set(x, 1.9, HZ); room.add(pl); } }
 const doorL = new THREE.Mesh(new THREE.BoxGeometry(1.5, 3.5, 0.05), glassMat), doorR = doorL.clone(); doorL.position.set(-0.75, 1.75, HZ); doorR.position.set(0.75, 1.75, HZ); room.add(doorL, doorR);
@@ -127,7 +133,7 @@ const ledMats = []; for (const [x, y, z, w, d, c] of [[0, 4.4, -HZ + 0.25, HX * 
 const rug = new THREE.Mesh(new THREE.PlaneGeometry(9, 3.4), std(0x2a2160, { roughness: 1 })); rug.rotation.x = -Math.PI / 2; rug.position.set(-6.5, 0.02, 5.6); room.add(rug);
 const rug2 = new THREE.Mesh(new THREE.PlaneGeometry(10, 5.4), std(0x1f2a52, { roughness: 1 })); rug2.rotation.x = -Math.PI / 2; rug2.position.set(0, 0.02, -1.4); room.add(rug2);
 const mat = new THREE.Mesh(new THREE.PlaneGeometry(3, 1.4), new THREE.MeshBasicMaterial({ map: canvasTex(256, 128, (g, w, h) => { g.fillStyle = '#20233f'; g.fillRect(0, 0, w, h); g.fillStyle = '#fff'; g.font = 'bold 32px sans-serif'; g.textAlign = 'center'; g.fillText('SELAMAT DATANG', w / 2, 55); g.font = '20px sans-serif'; g.fillText('Rafli PlayStation', w / 2, 92); }) })); mat.rotation.x = -Math.PI / 2; mat.position.set(0, 0.03, HZ - 1.1); room.add(mat);
-const ceilL = []; for (const [x, z] of [[-7, -3], [0, -3], [7, -3], [-6, 4], [6, 3]]) { const l = new THREE.PointLight(0xffe8c8, 9, 15); l.position.set(x, 4.2, z); scene.add(l); ceilL.push(l); }
+const ceilL = []; for (const [x, z] of [[0, -3], [-2, 4]]) { const l = new THREE.PointLight(0xffe8c8, 14, 26); l.position.set(x, 4.2, z); scene.add(l); ceilL.push(l); }
 const pend = []; for (const x of [-9, -4.5, 0, 4.5, 9]) { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 0.2, 20), new THREE.MeshBasicMaterial({ color: 0xfff0cc, toneMapped: false })); l.position.set(x, 3.9, -HZ + 3.4); room.add(l); pend.push(l); }
 
 // ---- kasir ----
@@ -162,7 +168,7 @@ function buildKantin() {
   const nm = textSprite('🍜 KANTIN RAFLI', '#ffe27a', 40); nm.position.set(8.0, 3.7, 6.2); nm.scale.set(3.4, 0.64, 1); kantin.add(nm);
   for (const x of [6.4, 7.6, 8.8, 10.0]) { const sl = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.05, 12), std(0xdc2626)); sl.position.set(x, 0.62, 4.9); const lg = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.6, 6), std(0x888)); lg.position.set(x, 0.3, 4.9); kantin.add(sl, lg); }
   if (S.snack < 1) { const veil = new THREE.Mesh(new THREE.BoxGeometry(4.8, 3.2, 3.6), new THREE.MeshBasicMaterial({ color: 0x111428, transparent: true, opacity: 0.55 })); veil.position.set(8.4, 1.6, 7.0); kantin.add(veil); kantinLock = textSprite('🔒 Kantin tutup — buka di tab Toko', '#ffd45e', 34); kantinLock.position.set(8.0, 2.2, 5.4); kantinLock.scale.set(3.6, 0.7, 1); kantin.add(kantinLock); }
-  drawMenu();
+  mergeByMaterial(kantin); drawMenu();
 }
 function drawMenu() {
   if (!menuTex) return; const { g, c } = menuTex.userData; g.fillStyle = '#1b1208'; g.fillRect(0, 0, c.width, c.height); g.fillStyle = '#ffd45e'; g.font = 'bold 34px sans-serif'; g.textAlign = 'center'; g.fillText('MENU KANTIN', c.width / 2, 44);
@@ -194,6 +200,7 @@ function buildDecor() {
   if (S.decor >= 2) for (const [x, z] of [[HX - 0.8, -HZ + 0.9], [-HX + 0.8, HZ - 0.8], [-11.2, -6.6], [11.2, 3.6]]) { const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.24, 0.5, 14), std(0x7a4a2a)); pot.position.set(x, 0.25, z); const lf = new THREE.Mesh(new THREE.IcosahedronGeometry(0.5, 1), std(0x2d9b4e, { roughness: 0.9 })); lf.position.set(x, 0.95, z); lf.scale.y = 1.3; lf.castShadow = true; decorGroup.add(pot, lf); addObs(x, z, 0.4, 0.4); }
   if (S.decor >= 3) for (const [x, c] of [[-7, 0x3b82f6], [0, 0xf472b6], [7, 0x4ade80]]) { const m = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.035, 8, 32), new THREE.MeshBasicMaterial({ color: c, toneMapped: false })); m.position.set(x, 3.5, 1.5); m.rotation.x = Math.PI / 2; decorGroup.add(m); }
   if (S.ac >= 1) { const mk2 = (x) => { const ac = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.4, 0.35), std(0xeeeeee, { roughness: 0.4 })); ac.position.set(x, 3.95, -HZ + 0.4); decorGroup.add(ac); }; mk2(-6.2); if (S.ac >= 2) mk2(6.2); if (S.ac >= 3) mk2(0); }
+  mergeByMaterial(decorGroup);
   if (typeof parties !== 'undefined') for (const q of parties) for (const m of q.members) if (m.seat) { const ns = lobbySeats.find((x) => x.pos.distanceTo(m.seat.pos) < 0.05); if (ns) { ns.used = true; m.seat = ns; } }
   buildGrid();
 }
@@ -216,6 +223,7 @@ const faceYaw = (st) => st.slot.ry + Math.PI;
 const selRing = new THREE.Mesh(new THREE.RingGeometry(1.7, 1.85, 40), new THREE.MeshBasicMaterial({ color: 0x4aa3ff, transparent: true, opacity: 0.8, side: THREE.DoubleSide })); selRing.rotation.x = -Math.PI / 2; selRing.position.y = 0.05; scene.add(selRing);
 let selected = 0;
 
+let _glowTex = null; function glowTex() { return _glowTex || (_glowTex = canvasTex(64, 64, (g) => { const gr = g.createRadialGradient(32, 32, 2, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,0.95)'); gr.addColorStop(0.5, 'rgba(255,255,255,0.35)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); })); }
 function buildStation(st) {
   st.parts.clear(); if (st.lock) { st.g.remove(st.lock); st.lock = null; } st.tvTex = null; st.led = null; st.glow = null;
   const d = S.st[st.i];
@@ -233,11 +241,12 @@ function buildStation(st) {
   const tex = canvasTex(160, 90, () => {}); st.tvTex = tex;
   const scr = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false })); scr.position.set(0, baseY, 0.033); st.parts.add(scr);
   const foot = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.05, 0.25), std(0x08080a)); foot.position.set(0, 0.6, 0.05); st.parts.add(foot);
-  const glow = new THREE.PointLight(0x5588ff, 2.5, 5.5); glow.position.set(0, 1.5, 1.4); st.parts.add(glow); st.glow = glow;
+  const gmat = new THREE.SpriteMaterial({ map: glowTex(), color: 0x5588ff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.3 }); const glow = new THREE.Sprite(gmat); glow.scale.set(w * 2.1, h * 2.3, 1); glow.position.set(0, baseY, 0.1); st.parts.add(glow); st.glow = gmat;
   const cons = makeConsole(d.c); cons.position.set(d.c >= 3 ? -1.35 : -1.2, 0.57, 0.15); cons.rotation.y = 0.15; st.parts.add(cons); st.led = cons.userData.led;
   const sofa = makeSofa(SOFA_COLORS[st.i], d.s); sofa.position.set(0, 0, 3.3); st.parts.add(sofa);
   const tb = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.4, 14), std(0x1f2937)); tb.position.set(1.7, 0.2, 2.6); tb.castShadow = true; st.parts.add(tb);
   const lab = textSprite(CONSOLES[d.c].name + ' · ' + tv.name, '#9fc3ff', 32); lab.position.set(0, baseY + h / 2 + 0.4, 0); lab.scale.set(2.6, 0.5, 1); st.parts.add(lab);
+  st.parts.updateMatrixWorld(true); mergeByMaterial(st.parts);
 }
 
 // ================= JALUR (A* grid, termasuk luar ruangan) =================
@@ -261,21 +270,22 @@ function buildGrid() {
   }
 }
 function nearestFree(cx, cz) { if (!blocked[cz * GW + cx]) return [cx, cz]; for (let r = 1; r < 10; r++) for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) { const x = cx + dx, z = cz + dz; if (x >= 0 && z >= 0 && x < GW && z < GH && !blocked[z * GW + x]) return [x, z]; } return [cx, cz]; }
-class Heap { constructor() { this.a = []; } push(k, v) { const a = this.a; a.push([k, v]); let i = a.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (a[p][0] <= a[i][0]) break; [a[p], a[i]] = [a[i], a[p]]; i = p; } } pop() { const a = this.a; const top = a[0]; const last = a.pop(); if (a.length) { a[0] = last; let i = 0; for (;;) { let l = 2 * i + 1, r = l + 1, m = i; if (l < a.length && a[l][0] < a[m][0]) m = l; if (r < a.length && a[r][0] < a[m][0]) m = r; if (m === i) break; [a[m], a[i]] = [a[i], a[m]]; i = m; } } return top; } get size() { return this.a.length; } }
+class Heap { constructor() { this.k = []; this.v = []; } get size() { return this.k.length; } push(key, val) { const K = this.k, V = this.v; let i = K.length; K.push(key); V.push(val); while (i > 0) { const p = (i - 1) >> 1; if (K[p] <= key) break; K[i] = K[p]; V[i] = V[p]; i = p; } K[i] = key; V[i] = val; } pop() { const K = this.k, V = this.v; const top = V[0]; const lk = K.pop(), lv = V.pop(); const n = K.length; if (n) { let i = 0; for (;;) { let c = 2 * i + 1; if (c >= n) break; if (c + 1 < n && K[c + 1] < K[c]) c++; if (K[c] >= lk) break; K[i] = K[c]; V[i] = V[c]; i = c; } K[i] = lk; V[i] = lv; } return top; } }
+const aG = new Float32Array(GW * GH), aCame = new Int32Array(GW * GH), aSeen = new Uint32Array(GW * GH), aClosed = new Uint32Array(GW * GH); let aStamp = 0; const heap = new Heap();
 function findPath(from, to) {
-  const [sx, sz] = nearestFree(...cellOf(from.x, from.z)), [ex, ez] = nearestFree(...cellOf(to.x, to.z)); const key = (x, z) => z * GW + x;
-  const open = new Heap(), came = new Map(), g = new Map(); g.set(key(sx, sz), 0); const h = (x, z) => { const dx = Math.abs(x - ex), dz = Math.abs(z - ez); return Math.max(dx, dz) + 0.414 * Math.min(dx, dz); }; open.push(h(sx, sz), [sx, sz]); const closed = new Set(); let found = false, it = 0;
-  while (open.size && it++ < 9000) {
-    const [, [cx, cz]] = open.pop(); const ck = key(cx, cz); if (closed.has(ck)) continue; closed.add(ck); if (cx === ex && cz === ez) { found = true; break; }
+  const [sx, sz] = nearestFree(...cellOf(from.x, from.z)), [ex, ez] = nearestFree(...cellOf(to.x, to.z)); const sk = sz * GW + sx, ek = ez * GW + ex; aStamp++; heap.k.length = 0; heap.v.length = 0;
+  const hf = (x, z) => { const dx = Math.abs(x - ex), dz = Math.abs(z - ez); return Math.max(dx, dz) + 0.414 * Math.min(dx, dz); };
+  aG[sk] = 0; aSeen[sk] = aStamp; heap.push(hf(sx, sz), sk); let found = false, it = 0;
+  while (heap.size && it++ < 6000) {
+    const ck = heap.pop(); if (aClosed[ck] === aStamp) continue; aClosed[ck] = aStamp; if (ck === ek) { found = true; break; } const cx = ck % GW, cz = (ck / GW) | 0;
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
-      if (!dx && !dz) continue; const nx = cx + dx, nz = cz + dz; if (nx < 0 || nz < 0 || nx >= GW || nz >= GH || blocked[key(nx, nz)]) continue;
-      if (dx && dz && (blocked[key(cx + dx, cz)] || blocked[key(cx, cz + dz)])) continue;
-      const ng = g.get(ck) + (dx && dz ? 1.414 : 1); const nk = key(nx, nz); if (g.has(nk) && ng >= g.get(nk)) continue; g.set(nk, ng); came.set(nk, ck); open.push(ng + h(nx, nz), [nx, nz]);
+      if (!dx && !dz) continue; const nx = cx + dx, nz = cz + dz; if (nx < 0 || nz < 0 || nx >= GW || nz >= GH) continue; const nk = nz * GW + nx; if (blocked[nk]) continue;
+      if (dx && dz && (blocked[cz * GW + cx + dx] || blocked[(cz + dz) * GW + cx])) continue;
+      const ng = aG[ck] + (dx && dz ? 1.414 : 1); if (aSeen[nk] === aStamp && ng >= aG[nk]) continue; aSeen[nk] = aStamp; aG[nk] = ng; aCame[nk] = ck; heap.push(ng + hf(nx, nz), nk);
     }
   }
   if (!found) return [to.clone()];
-  const out = []; let k = key(ex, ez); while (k !== key(sx, sz)) { out.push(cellCenter(k % GW, Math.floor(k / GW))); k = came.get(k); } out.reverse();
-  // haluskan (buang titik segaris) + string pulling ringan
+  const out = []; let k = ek; while (k !== sk) { out.push(cellCenter(k % GW, (k / GW) | 0)); k = aCame[k]; } out.reverse();
   const sm = []; for (let i = 0; i < out.length; i++) { if (i && i < out.length - 1) { const a = out[i - 1], b = out[i], c = out[i + 1]; if (Math.abs((b.x - a.x) * (c.z - b.z) - (b.z - a.z) * (c.x - b.x)) < 1e-6) continue; } sm.push(out[i]); }
   sm.push(to.clone()); return sm;
 }
@@ -542,7 +552,7 @@ function updateParties(dt) {
           else {
             const st = q.st, d = S.st[st.i]; st.busy = false; st.party = null; q.members.forEach((m) => { if (m.food) { m.p.userData.hips.remove(m.food); m.food = null; } });
             let inc = 0; const per = personIncome(d); q.members.forEach((m) => { const ml = m.reg ? memberLvl(m.reg) : 0; inc += per * (1 + CFG.eco.memberBonus * ml) * (q.vip ? CFG.eco.vipMult : q.type === 'gamer' ? CFG.eco.gamerMult : 1); });
-            q.income = inc; q.tip = inc * (SOFAS[d.s].tip + (S.sat > CFG.eco.tipSatMin ? CFG.eco.tipSat : 0) + q.members.reduce((a, m) => a + m.trait.baik * CFG.eco.tipBaik, 0)); q.elec = elecCost(d) * q.size;
+            q.income = inc; q.tip = inc * (SOFAS[d.s].tip + (S.sat > CFG.eco.tipSatMin ? CFG.eco.tipSat : 0) + q.members.reduce((a, m) => a + m.trait.baik * CFG.eco.tipBaik, 0)); q.elec = elecCost(d) * q.size + CFG.costs.elecPct * q.income;
             const idx = parties.filter((o) => o.state === 'toCounter' || o.state === 'queue' || o.state === 'pay').length % payQueue.length;
             goto(q, q.members.map((m, k2) => payQueue[idx].clone().add(new THREE.Vector3(k2 * 0.7, 0, 0))), 'toCounter');
           }
@@ -602,8 +612,12 @@ function updateStaff(dt) { for (const s of staffNPCs) { if (s.arrived) { s.wait 
 function updateClock(dt) {
   S.clock += dt / CFG.time.hourSec;
   if (S.clock >= 24) {
-    S.clock -= 24; const rent = dailyRent(), sal = dailySalary(); spend(rent, 'rent'); spend(sal, 'sal'); S.y = S.d; S.d = NEWD(); const p = dayProfit(S.y);
-    S.day++; banner(`📊 Laporan hari ke-${S.day - 1}: pendapatan ${money(S.y.inc + S.y.kantin + S.y.tip)} · biaya ${money(S.y.elec + S.y.rent + S.y.sal + S.y.cogs + S.y.broken)} · LABA ${money(p)}`); audio.quest(); save(); if (tab === 'fin') renderAll();
+    S.clock -= 24;
+    // tagihan harian: sewa, gaji tetap + bonus SDM, perawatan aset, pajak. Total kumulatif TIDAK direset; hanya catatan harian dipindah ke riwayat.
+    const gross = grossOf(S.d); const hc = headcount();
+    spend(dailyRent(), 'rent'); spend(dailyPayrollFlat() + gross * CFG.costs.salPct * Math.min(1, hc / 6), 'sal'); spend(assetValue() * CFG.costs.upkeepRate, 'upkeep'); spend(gross * CFG.costs.tax, 'tax');
+    S.y = S.d; S.d = NEWD(); const p = dayProfit(S.y); S.hist.push({ day: S.day, ...S.y }); if (S.hist.length > 90) S.hist.shift();
+    S.day++; banner(`📊 Laporan hari ke-${S.day - 1}: pendapatan ${money(grossOf(S.y))} · biaya ${money(costOf(S.y))} · LABA ${money(p)} · Total laba ${money(dayProfit(S.tot))}`); audio.quest(); save(); if (tab === 'fin') renderAll();
   }
 }
 let nextEvent = 55;
@@ -676,8 +690,17 @@ function stationItems(i) {
   ];
 }
 function finRows(d, title) {
-  const inc = d.inc + d.kantin + d.tip, exp = d.elec + d.rent + d.sal + d.cogs + d.broken, p = inc - exp; const row = (a, b, cls = '') => `<div class="fr ${cls}"><span>${a}</span><b>${money(b)}</b></div>`;
-  return `<div class="qlist"><h4>${title}</h4>${row('Sewa PS', d.inc)}${row('Kantin', d.kantin)}${row('Tip', d.tip)}${row('Total pendapatan', inc, 'tot')}${row('Listrik', -d.elec)}${row('Sewa tempat', -d.rent)}${row('Gaji & operasional', -d.sal)}${row('Bahan kantin', -d.cogs)}${row('Stik rusak', -d.broken)}${row('Total biaya', -exp, 'tot')}${row('LABA BERSIH', p, p >= 0 ? 'good' : 'bad')}<small>Margin ${inc > 0 ? Math.round((p / inc) * 100) : 0}%${d.theft ? ' · hilang karena kabur: ' + money(d.theft) : ''}</small></div>`;
+  const inc = grossOf(d), exp = costOf(d), p = inc - exp; const row = (a, b, cls = '') => `<div class="fr ${cls}"><span>${a}</span><b>${money(b)}</b></div>`;
+  return `<div class="qlist"><h4>${title}</h4>${row('Sewa PS', d.inc)}${row('Kantin', d.kantin)}${row('Tip', d.tip)}${row('Total pendapatan', inc, 'tot')}${row('Listrik', -d.elec)}${row('Sewa tempat', -d.rent)}${row('Gaji & bonus SDM', -d.sal)}${row('Bahan kantin', -d.cogs)}${row('Perawatan aset', -(d.upkeep || 0))}${row('Pajak usaha', -(d.tax || 0))}${row('Stik rusak', -d.broken)}${row('Total biaya', -exp, 'tot')}${row('LABA BERSIH', p, p >= 0 ? 'good' : 'bad')}<small>Margin ${inc > 0 ? Math.round((p / inc) * 100) : 0}%${d.theft ? ' · hilang karena kabur: ' + money(d.theft) : ''}</small></div>`;
+}
+function histHtml() {
+  const h = S.hist.slice(-14).reverse(); if (!h.length) return '<div class="qlist"><h4>🗓 Riwayat harian</h4><small>Belum ada hari yang selesai. Catatan tersimpan tiap tengah malam dan tidak ikut direset.</small></div>';
+  return `<div class="qlist"><h4>🗓 Riwayat harian (14 hari terakhir)</h4><canvas id="histChart" width="520" height="120"></canvas><table class="ht"><tr><th>Hari</th><th>Pendapatan</th><th>Biaya</th><th>Laba</th></tr>${h.map((r) => { const pf = dayProfit(r); return `<tr><td>${r.day}</td><td>${money(grossOf(r))}</td><td>${money(costOf(r))}</td><td class="${pf >= 0 ? 'good' : 'bad'}">${money(pf)}</td></tr>`; }).join('')}</table></div>`;
+}
+function drawHist() {
+  const c = $('histChart'); if (!c) return; const g = c.getContext('2d'), W = c.width, H = c.height; g.clearRect(0, 0, W, H); const h = S.hist.slice(-14); if (!h.length) return;
+  const vals = h.map((r) => dayProfit(r)); const mx = Math.max(1, ...vals.map(Math.abs)); const bw = W / h.length; g.strokeStyle = '#2d3160'; g.beginPath(); g.moveTo(0, H / 2); g.lineTo(W, H / 2); g.stroke();
+  vals.forEach((v, i) => { const hh = (Math.abs(v) / mx) * (H / 2 - 6); g.fillStyle = v >= 0 ? '#34d399' : '#f87171'; g.fillRect(i * bw + 3, v >= 0 ? H / 2 - hh : H / 2, bw - 6, hh); });
 }
 function renderAll() {
   [...$('tabs').children].forEach((b) => b.classList.toggle('on', b.dataset.t === tab)); let h = '';
@@ -691,9 +714,9 @@ function renderAll() {
   }
   else if (tab === 'quest') h += '<div class="qlist">' + `<h4>Episode ${S.ep + 1}</h4>` + (S.qs || []).map((q) => { const p = Math.min(qProg(q), q.n); return `<div class="q ${p >= q.n ? 'done' : ''}"><span>${p >= q.n ? '✅' : '🎯'} ${qDesc(q)}</span><div class="bar"><i style="width:${Math.min(100, p / q.n * 100)}%"></i></div></div>`; }).join('') + '<small>Selesaikan semua misi untuk naik episode. Tidak ada habisnya — target & bonus makin besar.</small></div>';
   else if (tab === 'ach') { const got = ACH.filter((a) => S.ach[a.id]).length; h += `<div class="qlist"><h4>🏆 Prestasi ${got}/${ACH.length}</h4><div class="stat">Pelanggan: <b>${S.served.toLocaleString('id-ID')}</b> · Total: <b>${money(S.life)}</b> · Hari: <b>${S.day}</b> · Episode: <b>${S.ep + 1}</b> · Franchise: <b>${S.franchises}</b> · Member: <b>${S.regs.length}</b> · Pesanan kantin: <b>${S.cnt.orders}</b></div><div class="achs">` + ACH.map((a) => `<div class="ach ${S.ach[a.id] ? 'got' : ''}"><b>${S.ach[a.id] ? '✅' : '🔒'} ${a.n}</b><small>${a.d} · ${money(a.r)}</small></div>`).join('') + '</div></div>'; }
-  else if (tab === 'fin') { h += finRows(S.d, `📊 Hari ini (hari ke-${S.day})`) + finRows(S.y, 'Kemarin') + `<div class="qlist"><small>Biaya tetap per hari (dibayar tengah malam): sewa ${money(dailyRent())} + gaji/operasional ${money(dailySalary())}. Listrik dipotong tiap sesi, bahan kantin tiap pesanan. Member tetap: ${S.regs.length} orang.</small></div>`; }
+  else if (tab === 'fin') { h += finRows(S.tot, '📈 Sejak awal (kumulatif — tidak direset)') + finRows(S.d, `📊 Hari ini (hari ke-${S.day})`) + finRows(S.y, 'Kemarin') + histHtml() + `<div class="qlist"><small>Tagihan tengah malam: sewa ${money(dailyRent())} + gaji tetap ${money(dailyPayrollFlat())} + bonus SDM ${fmtPct(CFG.costs.salPct)} dari pendapatan × karyawan (${headcount()}) + perawatan aset ${fmtPct(CFG.costs.upkeepRate)} × ${money(assetValue())} + pajak ${fmtPct(CFG.costs.tax)}. Listrik dipotong tiap sesi, bahan kantin tiap pesanan. Member: ${S.regs.length}. Total pendapatan & laba kumulatif tidak pernah direset; hanya catatan harian yang dipindah ke riwayat.</small></div>`; }
   else { const stars = Math.floor(Math.sqrt(S.run / CFG.eco.franchiseDiv)); h += `<div class="cards"><div class="card"><h4>👑 Buka Franchise</h4><p>Reset toko (uang, upgrade, cabang) tapi dapat <b>Bintang Franchise</b>: +${fmtPct(CFG.eco.starBonus)} pendapatan per bintang, permanen. Member, prestasi & episode tetap. Bisa diulang tanpa batas.</p><span class="lv">Bintang: ${S.stars} · Tambahan jika reset: +${stars}</span><button data-a="franchise" class="${stars >= 1 ? 'can' : ''}" ${stars < 1 ? 'disabled' : ''}>${stars < 1 ? 'Butuh ' + money(CFG.eco.franchiseDiv) + ' pendapatan' : 'Buka Franchise (+' + stars + '★)'}</button></div></div>`; }
-  $('cards').innerHTML = h; renderQuestMini();
+  $('cards').innerHTML = h; renderQuestMini(); if (tab === 'fin') drawHist();
 }
 function renderQuestMini() { $('quests').innerHTML = `<b>Episode ${S.ep + 1}</b>` + (S.qs || []).map((q) => { const p = Math.min(qProg(q), q.n); return `<div class="qm ${p >= q.n ? 'done' : ''}">${p >= q.n ? '✅' : '▫'} ${qDesc(q)} <em>${q.t === 'earn' ? money(p) : q.t === 'rep' ? p.toFixed(1) : Math.floor(p)}/${q.t === 'earn' ? money(q.n) : q.t === 'rep' ? q.n.toFixed(1) : q.n}</em></div>`; }).join(''); }
 function buy(a) {
@@ -766,8 +789,25 @@ $('btnSide').onclick = () => { $('side').classList.toggle('closed'); onResize();
 $('btnFull').onclick = () => { try { const el = document.documentElement; if (document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen().then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {}); } catch (e) { /* abaikan */ } };
 addEventListener('pointerdown', () => { try { if (matchMedia('(pointer:coarse)').matches) { const el = document.documentElement; const fs = el.requestFullscreen ? el.requestFullscreen() : null; if (fs) fs.then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {}); } } catch (e) { /* abaikan */ } }, { once: true });
 
+// ================= KUALITAS GRAFIS (otomatis menyesuaikan FPS) =================
+const GFX_MODES = ['auto', 'low', 'med', 'high']; const GFX_NAME = { auto: 'Otomatis', low: 'Rendah', med: 'Sedang', high: 'Tinggi' };
+const QL = { mode: lsGet('rafli-gfx', 'auto'), level: COARSE ? 0 : 1, ema: 50, acc: 0, changedAt: 0 };
+let shadowEvery = 4, tvEvery = 0.14, shadowTick = 0;
+function applyQuality(level) {
+  QL.level = level; const dpr = window.devicePixelRatio || 1; renderer.setPixelRatio([0.7, Math.min(1, dpr), Math.min(1.5, dpr)][level]); renderer.setSize(innerWidth, innerHeight, false);
+  const wantShadow = level >= 1; if (sun.castShadow !== wantShadow) sun.castShadow = wantShadow;
+  const sz = level >= 2 ? 2048 : 1024; if (sun.shadow.mapSize.x !== sz) { sun.shadow.mapSize.set(sz, sz); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
+  shadowEvery = [99, 4, 2][level]; tvEvery = [0.25, 0.14, 0.09][level]; renderer.shadowMap.needsUpdate = true; QL.changedAt = performance.now(); QL.ema = 45;
+}
+function setGfxMode(m) { QL.mode = m; lsSet('rafli-gfx', m); applyQuality(m === 'low' ? 0 : m === 'med' ? 1 : m === 'high' ? 2 : QL.level); $('btnGfx').title = 'Grafis: ' + GFX_NAME[m]; $('btnGfx').textContent = { auto: '🖥A', low: '🖥L', med: '🖥M', high: '🖥H' }[m]; }
+$('btnGfx').onclick = () => { audio.init(); const m = GFX_MODES[(GFX_MODES.indexOf(QL.mode) + 1) % GFX_MODES.length]; setGfxMode(m); toast('Grafis: ' + GFX_NAME[m]); };
+function governQuality(fps, now) {
+  QL.ema = QL.ema * 0.92 + fps * 0.08; QL.acc += 1; if (QL.mode !== 'auto' || QL.acc < 90 || now - QL.changedAt < 5000) return; QL.acc = 0;
+  if (QL.ema < 32 && QL.level > 0) applyQuality(QL.level - 1); else if (QL.ema > 57 && QL.level < 2 && now - QL.changedAt > 15000) applyQuality(QL.level + 1);
+}
+
 // ================= LOOP =================
-let arrive = 3, saveT = 0, uiT = 0, last = performance.now(), blipT = 0, qT = 0, thunderT = 15, carT = 8;
+let ledState = null, pendT = 0, arrive = 3, saveT = 0, uiT = 0, last = performance.now(), blipT = 0, qT = 0, thunderT = 15, carT = 8;
 function simStep(dt) {
   clockT += dt; updateClock(dt); updateEvents(dt); updateLater(dt);
   arrive -= dt; if (arrive <= 0) { arrive = arrivalEvery() * (0.7 + Math.random() * 0.6); if (parties.filter((p) => PRE.includes(p.state)).length < 8) spawnParty(); }
@@ -775,18 +815,19 @@ function simStep(dt) {
   cashier.m.p = cashier; if (cashierBusy && cashierBusy.state === 'pay') poseType(cashier, clockT); else poseStand(cashier, clockT); finishPose(cashier.m);
   let near = false; const dp = new THREE.Vector3(0, 0, HZ); for (const m of allMembers()) if (m.p.position.distanceTo(dp) < 2.6) near = true; for (const s of staffNPCs) if (s.p.position.distanceTo(dp) < 2.6) near = true;
   const tx = near ? 1.55 : 0.75; doorL.position.x += (-tx - doorL.position.x) * Math.min(1, dt * 6); doorR.position.x += (tx - doorR.position.x) * Math.min(1, dt * 6);
-  for (const st of stations) { if (!S.st[st.i].o) continue; if ((st.flash -= dt) <= 0) { st.flash = st.busy ? 0.09 : 0.12; drawTV(st, clockT + st.i * 3, st.busy); } if (st.glow) { st.glow.color.set(st.busy ? GCOL[st.genre % 5] : '#5588ff'); st.glow.intensity = blackout ? 0 : st.busy ? 4.5 + Math.sin(clockT * 12 + st.i) * 1.2 : 1.6; } if (st.led) st.led.material.color.set(blackout ? 0x000000 : st.busy ? 0x33ff88 : 0x3b82f6); }
+  for (const st of stations) { if (!S.st[st.i].o) continue; if ((st.flash -= dt) <= 0) { st.flash = st.busy ? tvEvery : tvEvery * 1.4; drawTV(st, clockT + st.i * 3, st.busy); } if (st.glow) { st.glow.color.set(st.busy ? GCOL[st.genre % 5] : '#5588ff'); st.glow.opacity = blackout ? 0 : st.busy ? 0.55 + Math.sin(clockT * 12 + st.i) * 0.12 : 0.28; } if (st.led) st.led.material.color.set(blackout ? 0x000000 : st.busy ? 0x33ff88 : 0x3b82f6); }
   blipT -= dt; if (blipT <= 0) { blipT = 0.3 + Math.random() * 0.6; if (stations.some((s) => s.busy) && !blackout) audio.blip(); }
   carT -= dt; if (carT <= 0) { carT = 10 + Math.random() * 12; audio.car(); }
 }
 function frame(now) {
-  const rdt = Math.min(0.06, (now - last) / 1000); last = now;
+  const rawDt = (now - last) / 1000; const rdt = Math.min(0.06, rawDt); last = now; if (rawDt > 0 && rawDt < 1) governQuality(1 / rawDt, now);
+  if (++shadowTick % shadowEvery === 0) renderer.shadowMap.needsUpdate = true;
   for (let i = 0; i < TS; i++) simStep(rdt);
   const raining = Date.now() < rainUntil; audio.setRain(raining); if (raining) { thunderT -= rdt; if (thunderT <= 0) { thunderT = 12 + Math.random() * 14; audio.thunder(); } }
   const env = world.update(rdt * TS, S.clock, raining, camera.position, { sun, hemi, fog: scene.fog }); sun.target.position.set(0, 0, 8);
   if (blackout) { hemi.intensity *= 0.55; sun.intensity *= 0.7; }
-  const nightK = env.night; ceilL.forEach((l) => { l.intensity = blackout ? 0 : 7 + nightK * 7; }); neonL.intensity = blackout ? 0 : (14 + Math.sin(clockT * 2) * 3) * (0.7 + nightK * 1.1); neonR.intensity = blackout ? 0 : (14 + Math.cos(clockT * 2.3) * 3) * (0.7 + nightK * 1.1); ledMats.forEach((m) => m.color.setScalar(blackout ? 0.05 : 1).multiply(new THREE.Color(m === ledMats[0] ? 0xf472b6 : m === ledMats[1] ? 0x3b82f6 : 0x8b5cf6)));
-  pend.forEach((m) => m.material.color.setRGB(blackout ? 0.1 : 1, blackout ? 0.1 : 0.94 - nightK * 0.1, blackout ? 0.1 : 0.8 - nightK * 0.3));
+  const nightK = env.night; ceilL.forEach((l) => { l.intensity = blackout || QL.level < 1 ? 0 : 11 + nightK * 8; }); neonL.intensity = blackout ? 0 : (14 + Math.sin(clockT * 2) * 3) * (0.7 + nightK * 1.1); neonR.intensity = blackout ? 0 : (14 + Math.cos(clockT * 2.3) * 3) * (0.7 + nightK * 1.1); if (ledState !== blackout) { ledState = blackout; ledMats.forEach((m, i) => m.color.set([0xf472b6, 0x3b82f6, 0x8b5cf6][i]).multiplyScalar(blackout ? 0.05 : 1)); }
+  pendT -= rdt; if (pendT <= 0) { pendT = 0.3; pend.forEach((m) => m.material.color.setRGB(blackout ? 0.1 : 1, blackout ? 0.1 : 0.94 - nightK * 0.1, blackout ? 0.1 : 0.8 - nightK * 0.3)); }
   const ss = stations[selected]; selRing.position.copy(toWorld(ss, 0, 0.05, 1.8)); selRing.rotation.z = ss.slot.ry; selRing.material.opacity = 0.5 + Math.sin(clockT * 4) * 0.3; selRing.visible = tab === 'st';
   // kamera halus
   if (camMode === 'follow' && followM && followM.alive) { camT.tx = followM.p.position.x; camT.tz = followM.p.position.z; camT.ty = 1.2; if (followM.v > 0.4 || !followM.q || followM.q.state !== 'play') camT.az = smoothYaw(camT.az, followM.p.rotation.y + Math.PI + followAz, Math.min(1, rdt * 1.5)); } else if (camMode === 'follow') setCam('pano');
@@ -794,7 +835,7 @@ function frame(now) {
   camera.position.set(cam.tx + Math.sin(cam.az) * Math.cos(cam.el) * cam.dist, cam.ty + Math.sin(cam.el) * cam.dist, cam.tz + Math.cos(cam.az) * Math.cos(cam.el) * cam.dist); camera.lookAt(cam.tx, cam.ty, cam.tz);
   const cx = camera.position.x, cz = camera.position.z; for (const w of walls) { const hide = (w.key === 'back' && cz < -HZ + 1) || (w.key === 'left' && cx < -HX + 1) || (w.key === 'right' && cx > HX - 1); w.m.material.opacity += ((hide ? 0.08 : 1) - w.m.material.opacity) * Math.min(1, rdt * 6); w.m.material.depthWrite = w.m.material.opacity > 0.9; }
   uiT += rdt; if (uiT > 0.25) {
-    uiT = 0; $('money').textContent = money(S.money); $('ips').textContent = money(incomeRate()); const r = rep(); const rr = Math.round(r); $('rep').textContent = '★'.repeat(rr) + '☆'.repeat(5 - rr); const pr = dayProfit(S.d); $('profit').textContent = money(pr); $('profit').style.color = pr >= 0 ? '#6ee7b7' : '#fca5a5';
+    uiT = 0; $('money').textContent = money(S.money); $('ips').textContent = money(incomeRate()); const r = rep(); const rr = Math.round(r); $('rep').textContent = '★'.repeat(rr) + '☆'.repeat(5 - rr); const pr = dayProfit(S.d), pt = dayProfit(S.tot); $('profit').textContent = money(pt); $('profit').style.color = pt >= 0 ? '#6ee7b7' : '#fca5a5'; $('profitL').textContent = 'Laba total · hari ini ' + money(pr);
     $('stars').textContent = '👑 ' + S.stars; const hh = Math.floor(S.clock), mm = Math.floor((S.clock % 1) * 60); $('clock').textContent = `Hari ${S.day} · ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')} ${raining ? '🌧' : hh >= 6 && hh < 18 ? '☀' : '🌙'}`;
     const now2 = Date.now(); const hhb = $('btnHH'); if (hhActive()) { hhb.textContent = '🔥 ' + Math.ceil((S.hhUntil - now2) / 1000) + 's'; hhb.classList.add('act'); } else if (now2 < S.hhReady) { hhb.textContent = '⏳ ' + Math.ceil((S.hhReady - now2) / 1000) + 's'; hhb.classList.remove('act'); } else { hhb.textContent = '⚡ Happy Hour'; hhb.classList.remove('act'); }
     qT += 0.25; if (qT > 1) { qT = 0; checkQuests(); checkAch(); updateTutorial(); renderQuestMini(); if (npcSel) updateNpc(); } affordRefresh();
@@ -802,13 +843,12 @@ function frame(now) {
   saveT += rdt; if (saveT > 5) { saveT = 0; save(); }
   renderer.render(scene, camera); requestAnimationFrame(frame);
 }
-let lastAff = '';
-function affordRefresh() { const k = Math.floor(S.money / 500) + tab + selected + S.day; if (k === lastAff) return; lastAff = k; const sc = $('cards').scrollTop; renderAll(); $('cards').scrollTop = sc; }
+let lastAff = '', lastAffT = 0;
+function affordRefresh() { const now = performance.now(); const k = tab + selected + S.day + (lastAff === '' ? 'x' : ''); if (k === lastAffK && now - lastAffT < 1500) return; lastAffK = k; lastAffT = now; lastAff = 'y'; const sc = $('cards').scrollTop; renderAll(); $('cards').scrollTop = sc; }
+let lastAffK = '';
 
 // ================= HUBUNGAN DENGAN APLIKASI GM =================
 const OVR_KEY = 'rafli-ovr-v1', LINK_KEY = 'rafli-link-v1', CFGT_KEY = 'rafli-cfgt-v1';
-const lsGet = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } };
-const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* abaikan */ } };
 OVR = lsGet(OVR_KEY, {}); rebuildCfg();
 const linkCfg = Object.assign({ room: '', server: DEFAULT_SERVER, remote: true }, lsGet(LINK_KEY, {}));
 let linkStatus = {};
@@ -820,7 +860,7 @@ function applyLive() {
 function snapshot() {
   const o = stations.filter((x) => S.st[x.i].o);
   return { money: S.money, stars: S.stars, ep: S.ep, day: S.day, clock: S.clock, sat: S.sat, served: S.served, life: S.life, run: S.run, mkt: S.mkt, train: S.train, snack: S.snack, ac: S.ac, decor: S.decor, lobby: S.lobby, kasir: S.kasir, staff: S.staff, cctv: S.cctv, genset: S.genset,
-    st: S.st, br: S.br, d: S.d, y: S.y, regs: S.regs.length, rep: rep(), ips: incomeRate(), profit: dayProfit(S.d), parties: parties.length, busy: o.filter((x) => x.busy).length, stations: o.length, rain: Date.now() < rainUntil, blackout, hh: hhActive(), ts: TS, cnt: S.cnt, daily: { rent: dailyRent(), sal: dailySalary() }, t: Date.now() };
+    st: S.st, br: S.br, d: S.d, y: S.y, tot: S.tot, hist: S.hist.slice(-14), regs: S.regs.length, rep: rep(), ips: incomeRate(), profit: dayProfit(S.d), parties: parties.length, busy: o.filter((x) => x.busy).length, stations: o.length, rain: Date.now() < rainUntil, blackout, hh: hhActive(), ts: TS, cnt: S.cnt, daily: { rent: dailyRent(), sal: (dailyPayrollFlat()) }, t: Date.now() };
 }
 const sendState = (remote = true) => link.send({ k: 'state', d: snapshot() }, { remote, co: 'state' });
 let pendingDecor = false;
@@ -876,12 +916,13 @@ const hadSave = !!(() => { try { return localStorage.getItem(SAVE); } catch (e) 
 load(); if (!hadSave) { S.money = CFG.eco.startMoney; S.clock = CFG.time.startHour; } S.regs.forEach((r) => (r.present = false)); if (!S.qs) S.qs = genQuests(S.ep);
 link.configure(linkCfg); audio.musicMul = CFG.audio.music; audio.sfxMul = CFG.audio.sfx;
 { const away = (Date.now() - (S.seen || Date.now())) / 1000;
-  if (away > 60 && S.life > 0) { const inc = S.st.filter((x) => x.o).reduce((a, d) => a + personIncome(d) * 1.4 / (sessionLen() + 10), 0); const net = Math.max(0, inc * CFG.eco.offlineRate - (dailyRent() + dailySalary()) / (CFG.time.hourSec * 24)); const amt = Math.floor(net * Math.min(away, CFG.eco.offlineMaxHours * 3600)); if (amt > 0) { S.money += amt; S.run += amt; S.life += amt; $('welcomeTxt').textContent = `Toko tetap buka ${Math.round(away / 60)} menit dan menghasilkan laba bersih ${money(amt)}.`; $('welcome').classList.remove('hidden'); } } }
+  if (away > 60 && S.life > 0) { const inc = S.st.filter((x) => x.o).reduce((a, d) => a + personIncome(d) * 1.4 / (sessionLen() + 10), 0); const net = Math.max(0, inc * CFG.eco.offlineRate - (dailyRent() + (dailyPayrollFlat())) / (CFG.time.hourSec * 24)); const amt = Math.floor(net * Math.min(away, CFG.eco.offlineMaxHours * 3600)); if (amt > 0) { S.money += amt; S.run += amt; S.life += amt; $('welcomeTxt').textContent = `Toko tetap buka ${Math.round(away / 60)} menit dan menghasilkan laba bersih ${money(amt)}.`; $('welcome').classList.remove('hidden'); } } }
 $('welcomeOk').onclick = () => { audio.init(); $('welcome').classList.add('hidden'); audio.cash(); };
 BAYS.forEach((b) => { b.taken = b.fixed; });
 world.setBranches(branchCount()); stations.forEach(buildStation); buildKantin(); buildDecor(); syncStaff(); syncPrefs(); renderAll(); onResize(); setCam('pano');
 if (innerHeight < 520) { PRESETS.pano.dist = 24; PRESETS.pano.el = 0.85; setCam('pano'); Object.assign(cam, PRESETS.pano); }
 else Object.assign(cam, PRESETS.pano);
+setGfxMode(GFX_MODES.includes(QL.mode) ? QL.mode : 'auto'); applyQuality(QL.mode === 'low' ? 0 : QL.mode === 'high' ? 2 : QL.level);
 addEventListener('pointerdown', () => { audio.init(); audio.setMusic(S.music); audio.setSfx(S.sfx); }, { once: true }); addEventListener('keydown', () => { audio.init(); audio.setMusic(S.music); audio.setSfx(S.sfx); }, { once: true });
-window.__rp = { get cfg() { return CFG; }, personIncome, rain() { rainUntil = Date.now() + 90000; }, get S() { return S; }, stations, parties, spawnParty, buy, findPath, world, cam, camT, setCam, allMembers, breakStation, fixStation, tasks, waiter, get blackout() { return blackout; } };
+window.__rp = { renderer, scene, get cfg() { return CFG; }, personIncome, rain() { rainUntil = Date.now() + 90000; }, get S() { return S; }, stations, parties, spawnParty, buy, findPath, world, cam, camT, setCam, allMembers, breakStation, fixStation, tasks, waiter, get blackout() { return blackout; } };
 requestAnimationFrame(frame);

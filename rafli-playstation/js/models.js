@@ -1,7 +1,40 @@
 // Model 3D prosedural: orang (rangka 2 segmen), konsol PS3/PS4/PS4 Pro/PS5/PS5 Pro, stik, sofa, TV, dll.
 import * as THREE from 'three';
 
-export const std = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.6, ...o });
+// Material ringan (Lambert) dengan cache: material dengan parameter sama dipakai bersama
+const matCache = new Map();
+export const std = (color, o = {}) => {
+  const { roughness, metalness, flatShading, map, ...rest } = o; void roughness; void metalness;
+  const key = map ? null : color + '|' + (flatShading ? 1 : 0) + '|' + JSON.stringify(rest);
+  if (key && matCache.has(key)) return matCache.get(key);
+  const m = new THREE.MeshLambertMaterial({ color, flatShading: !!flatShading, map, ...rest }); if (key) matCache.set(key, m); return m;
+};
+const geoCache = new Map();
+export const sharedGeo = (key, make) => { let g = geoCache.get(key); if (!g) { g = make(); geoCache.set(key, g); } return g; };
+// gabungkan beberapa bagian berwarna menjadi 1 geometri (warna per-vertex)
+const _col = new THREE.Color();
+export function mergeColored(parts) {
+  const pos = [], nor = [], col = [];
+  for (const { g, m, c } of parts) {
+    const ng = g.index ? g.toNonIndexed() : g.clone(); if (m) ng.applyMatrix4(m); _col.set(c);
+    const p = ng.attributes.position.array, n = ng.attributes.normal.array; for (let i = 0; i < p.length; i++) { pos.push(p[i]); nor.push(n[i]); } for (let i = 0; i < p.length / 3; i++) col.push(_col.r, _col.g, _col.b); ng.dispose();
+  }
+  const out = new THREE.BufferGeometry(); out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); out.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); return out;
+}
+// gabungkan mesh statis dalam grup menjadi satu mesh per material (hemat draw call)
+export function mergeByMaterial(group) {
+  group.updateMatrixWorld(true); const inv = group.matrixWorld.clone().invert(); const buckets = new Map(); const rm = [];
+  group.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && !Array.isArray(o.material)) { if (!buckets.has(o.material)) buckets.set(o.material, []); buckets.get(o.material).push(o); rm.push(o); } });
+  const out = [];
+  for (const [mat, list] of buckets) {
+    const pos = [], nor = [], uv = [], colr = []; const hasUV = list.every((o) => o.geometry.attributes.uv); const hasC = list.every((o) => o.geometry.attributes.color);
+    for (const o of list) { const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); g.applyMatrix4(inv.clone().multiply(o.matrixWorld)); const p = g.attributes.position.array, n = g.attributes.normal.array; for (let i = 0; i < p.length; i++) { pos.push(p[i]); nor.push(n[i]); } if (hasUV) { const u = g.attributes.uv.array; for (let i = 0; i < u.length; i++) uv.push(u[i]); } if (hasC) { const c = g.attributes.color.array; for (let i = 0; i < c.length; i++) colr.push(c[i]); } g.dispose(); }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); if (hasUV) geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); if (hasC) geo.setAttribute('color', new THREE.Float32BufferAttribute(colr, 3));
+    const mesh = new THREE.Mesh(geo, mat); mesh.matrixAutoUpdate = true; out.push(mesh);
+  }
+  rm.forEach((o) => o.parent && o.parent.remove(o)); out.forEach((o) => group.add(o)); return out;
+}
+export const vcMat = new THREE.MeshLambertMaterial({ vertexColors: true });
 export function canvasTex(w, h, fn) { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); fn(g, w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; t.userData = { c, g }; return t; }
 
 const emojiCache = {};
@@ -50,7 +83,7 @@ export function makeConsole(tier) {
     led = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.36, 0.03), new THREE.MeshBasicMaterial({ color: 0x3b82f6, toneMapped: false })); led.position.set(0.0, 0.22, 0.102); g.add(led);
     if (tier === 4) { const acc = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.012, 0.22), new THREE.MeshBasicMaterial({ color: 0x8b5cf6, toneMapped: false })); acc.position.set(0, 0.012, 0.0); g.add(acc); }
   }
-  g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  mergeByMaterial(g);
   g.userData.led = led; return g;
 }
 
@@ -63,7 +96,7 @@ export function makeSofa(color, comfort = 0, width = 2.1) {
   for (const sx of [-1, 1]) { const arm = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.5, 0.9), m); arm.position.set(sx * (width / 2 + 0.0), 0.46, 0); g.add(arm); }
   for (const sx of [-1, 1]) { const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.1, 8), std(0x222)); leg.position.set(sx * (width / 2 - 0.1), 0.05, 0.3); g.add(leg); const leg2 = leg.clone(); leg2.position.z = -0.3; g.add(leg2); }
   if (comfort >= 2) { for (const sx of [-1, 1]) { const cu = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.4, 0.12), std(0xfacc15, { roughness: 0.8 })); cu.position.set(sx * (width / 2 - 0.4), 0.62, 0.2); cu.rotation.set(-0.25, sx * 0.2, 0); g.add(cu); } }
-  g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  mergeByMaterial(g); g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   return g;
 }
 export function makeChair(color = 0x3b82f6) {
@@ -71,7 +104,7 @@ export function makeChair(color = 0x3b82f6) {
   const seat = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.08, 0.55), m); seat.position.y = 0.45; g.add(seat);
   const bk = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.55, 0.07), m); bk.position.set(0, 0.76, 0.24); g.add(bk);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.45, 6), std(0x222)); l.position.set(sx * 0.22, 0.22, sz * 0.22); g.add(l); }
-  g.traverse((o) => { if (o.isMesh) { o.castShadow = true; } });
+  mergeByMaterial(g); g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   return g;
 }
 
@@ -85,7 +118,7 @@ export function makeCar(color = 0xdc2626, kind = 'car') {
   const hood = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.1, 1.2), body); hood.position.set(0, 0.92 + tall, 1.45); g.add(hood);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.26, 10), dark); w.rotation.z = Math.PI / 2; w.position.set(sx * 0.93, 0.34, sz * 1.3); g.add(w); }
   for (const sx of [-1, 1]) { const hl = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.14, 0.05), new THREE.MeshBasicMaterial({ color: 0xfff6c8, toneMapped: false })); hl.position.set(sx * 0.62, 0.72 + tall, 2.07); g.add(hl); const tl = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.12, 0.05), new THREE.MeshBasicMaterial({ color: 0xff2222, toneMapped: false })); tl.position.set(sx * 0.62, 0.74 + tall, -2.07); g.add(tl); }
-  g.traverse((o) => { if (o.isMesh) o.castShadow = true; }); return g;
+  mergeByMaterial(g); return g;
 }
 export function makeBike(color = 0x2563eb) {
   const g = new THREE.Group(); const body = std(color, { roughness: 0.4, flatShading: true }), dark = std(0x111111);
@@ -95,7 +128,7 @@ export function makeBike(color = 0x2563eb) {
   const bar = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.05, 0.05), dark); bar.position.set(0, 1.08, 0.5); g.add(bar);
   for (const z of [0.7, -0.75]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.14, 10), dark); w.rotation.z = Math.PI / 2; w.position.set(0, 0.28, z); g.add(w); }
   const hl = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, 0.04), new THREE.MeshBasicMaterial({ color: 0xfff6c8, toneMapped: false })); hl.position.set(0, 0.95, 0.72); g.add(hl);
-  g.traverse((o) => { if (o.isMesh) o.castShadow = true; }); return g;
+  mergeByMaterial(g); return g;
 }
 
 // ---------- makanan kantin ----------
@@ -146,51 +179,46 @@ const SHIRTS = [0xef4444, 0x22c55e, 0xf59e0b, 0x8b5cf6, 0x06b6d4, 0xec4899, 0x64
 const PANTS = [0x1f2937, 0x374151, 0x1e3a8a, 0x3f3f46, 0x7c5a3a];
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
 
-function limb(len, r, mat, parentY) { // pivot + segmen, mengembalikan {pivot, end}
-  const piv = new THREE.Group(); const seg = new THREE.Mesh(new THREE.CapsuleGeometry(r, len - r * 2, 3, 8), mat); seg.position.y = -len / 2; piv.add(seg);
-  const end = new THREE.Group(); end.position.y = -len; piv.add(end); return { piv, end };
-}
+const T4 = (x, y, z, sx = 1, sy = 1, sz = 1, rx = 0) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, 0, 0)), new THREE.Vector3(sx, sy, sz));
+const G = {
+  torso: () => sharedGeo('torso', () => new THREE.CapsuleGeometry(0.17, 0.32, 2, 7)), pelvis: () => sharedGeo('pelvis', () => new THREE.BoxGeometry(0.3, 0.14, 0.2)), neck: () => sharedGeo('neck', () => new THREE.CylinderGeometry(0.05, 0.055, 0.08, 6)),
+  skull: () => sharedGeo('skull', () => new THREE.SphereGeometry(0.15, 9, 7)), hair: () => sharedGeo('hair', () => new THREE.SphereGeometry(0.162, 9, 6, 0, Math.PI * 2, 0, Math.PI * 0.52)), pony: () => sharedGeo('pony', () => new THREE.CapsuleGeometry(0.04, 0.16, 2, 5)),
+  capTop: () => sharedGeo('capTop', () => new THREE.CylinderGeometry(0.155, 0.165, 0.07, 9)), capBill: () => sharedGeo('capBill', () => new THREE.BoxGeometry(0.14, 0.015, 0.1)), band: () => sharedGeo('band', () => new THREE.TorusGeometry(0.16, 0.014, 5, 10, Math.PI)), cup: () => sharedGeo('cupE', () => new THREE.CylinderGeometry(0.05, 0.05, 0.04, 7)),
+  apron: () => sharedGeo('apron', () => new THREE.BoxGeometry(0.3, 0.38, 0.02)), bag: () => sharedGeo('bag', () => new THREE.BoxGeometry(0.26, 0.34, 0.12)),
+  seg: (len, r) => sharedGeo(`seg${len}_${r}`, () => { const g = new THREE.CapsuleGeometry(r, len - r * 2, 2, 6); g.translate(0, -len / 2, 0); return g; }),
+  hand: () => sharedGeo('hand', () => new THREE.SphereGeometry(0.045, 6, 5)), shoe: () => sharedGeo('shoe', () => new THREE.BoxGeometry(0.1, 0.07, 0.22)),
+};
 export function makePerson(opt = {}) {
-  const root = new THREE.Group();
-  const kind = opt.kind || 'cust';
-  const skin = std(opt.skin ?? pick(SKIN), { roughness: 0.75 });
-  const shirtC = opt.shirt ?? pick(SHIRTS), pantsC = opt.pants ?? pick(PANTS);
-  const shirt = std(shirtC, { roughness: 0.8 }), pants = std(pantsC, { roughness: 0.85 });
-  const girl = opt.girl ?? Math.random() < 0.35;
+  const root = new THREE.Group(); const kind = opt.kind || 'cust';
+  const skinC = opt.skin ?? pick(SKIN), shirtC = opt.shirt ?? pick(SHIRTS), pantsC = opt.pants ?? pick(PANTS), girl = opt.girl ?? Math.random() < 0.35, hairC = opt.hair ?? pick([0x111111, 0x2b1b12, 0x3b2314, 0x0a0a0a, 0x5b3a1e]), shoeC = pick([0xf8fafc, 0x111827, 0xdc2626]);
   const hips = new THREE.Group(); hips.position.y = 0.9; root.add(hips);
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.32, 4, 10), shirt); torso.position.y = 0.3; torso.scale.set(1.05, 1, 0.8); hips.add(torso);
-  const pelvis = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.14, 0.2), pants); pelvis.position.y = 0.02; hips.add(pelvis);
-  if (opt.apron) { const ap = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.38, 0.02), std(0x111827)); ap.position.set(0, 0.28, 0.14); hips.add(ap); }
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.055, 0.08, 8), skin); neck.position.y = 0.62; hips.add(neck);
+  // badan: torso + pinggul + leher (+celemek/tas) = 1 mesh
+  const body = [{ g: G.torso(), m: T4(0, 0.3, 0, 1.05, 1, 0.8), c: shirtC }, { g: G.pelvis(), m: T4(0, 0.02, 0), c: pantsC }, { g: G.neck(), m: T4(0, 0.62, 0), c: skinC }];
+  if (opt.apron) body.push({ g: G.apron(), m: T4(0, 0.28, 0.14), c: 0x111827 }); if (opt.bag) body.push({ g: G.bag(), m: T4(0, 0.3, -0.18), c: pick([0x2563eb, 0xdc2626, 0x16a34a]) });
+  hips.add(new THREE.Mesh(mergeColored(body), vcMat));
+  // kepala: tengkorak + rambut + topi/headset = 1 mesh
   const head = new THREE.Group(); head.position.y = 0.76; hips.add(head);
-  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 14), skin); skull.scale.set(0.95, 1.08, 1); head.add(skull);
-  const hairC = opt.hair ?? pick([0x111111, 0x2b1b12, 0x3b2314, 0x0a0a0a, 0x5b3a1e]);
-  const hairM = std(hairC, { roughness: 0.9 });
-  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.162, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.52), hairM); hair.position.y = 0.02; hair.rotation.x = -0.15; head.add(hair);
-  if (girl) { const pt = new THREE.Mesh(new THREE.CapsuleGeometry(0.04, 0.16, 3, 6), hairM); pt.position.set(0, -0.02, -0.17); pt.rotation.x = 0.4; head.add(pt); }
-  const eyeM = std(0x111, { roughness: 0.3 }); for (const sx of [-1, 1]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 6), eyeM); e.position.set(sx * 0.055, 0.02, 0.14); head.add(e); }
-  if (opt.cap ?? (kind === 'cust' && !girl && Math.random() < 0.3)) { const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.155, 0.165, 0.07, 14), std(pick([0x111827, 0xdc2626, 0x2563eb]))); cap.position.y = 0.11; head.add(cap); const bill = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.015, 0.1), cap.material); bill.position.set(0, 0.085, 0.16); head.add(bill); }
-  if (opt.headset) { const hp = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.014, 6, 16, Math.PI), std(0x111)); hp.position.y = 0.02; hp.rotation.z = 0; head.add(hp); for (const sx of [-1, 1]) { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.04, 10), std(0xef4444)); c.rotation.z = Math.PI / 2; c.position.set(sx * 0.16, 0.0, 0); head.add(c); } }
-  // lengan
+  const hp = [{ g: G.skull(), m: T4(0, 0, 0, 0.95, 1.08, 1), c: skinC }, { g: G.hair(), m: T4(0, 0.02, 0, 1, 1, 1, -0.15), c: hairC }];
+  if (girl) hp.push({ g: G.pony(), m: T4(0, -0.02, -0.17, 1, 1, 1, 0.4), c: hairC });
+  if (opt.cap ?? (kind === 'cust' && !girl && Math.random() < 0.3)) { const cc = pick([0x111827, 0xdc2626, 0x2563eb]); hp.push({ g: G.capTop(), m: T4(0, 0.11, 0), c: cc }, { g: G.capBill(), m: T4(0, 0.085, 0.16), c: cc }); }
+  if (opt.headset) { hp.push({ g: G.band(), m: T4(0, 0.02, 0), c: 0x111111 }); for (const sx of [-1, 1]) { const m = T4(sx * 0.16, 0, 0); m.multiply(new THREE.Matrix4().makeRotationZ(Math.PI / 2)); hp.push({ g: G.cup(), m, c: 0xef4444 }); } }
+  head.add(new THREE.Mesh(mergeColored(hp), vcMat));
+  // lengan: lengan atas (baju) + lengan bawah & tangan (kulit)
+  const shirtM = std(shirtC), pantsM = std(pantsC);
   const arms = [];
   for (const sx of [-1, 1]) {
-    const up = limb(0.28, 0.05, shirt); up.piv.position.set(sx * 0.22, 0.52, 0); hips.add(up.piv);
-    const fo = limb(0.26, 0.042, skin); fo.piv.position.copy(up.end.position); up.piv.add(fo.piv);
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), skin); hand.position.y = -0.28; fo.piv.add(hand);
-    arms.push({ up: up.piv, fo: fo.piv, hand });
+    const up = new THREE.Group(); up.position.set(sx * 0.22, 0.52, 0); hips.add(up); up.add(new THREE.Mesh(G.seg(0.28, 0.05), shirtM));
+    const fo = new THREE.Group(); fo.position.y = -0.28; up.add(fo); fo.add(new THREE.Mesh(mergeColored([{ g: G.seg(0.26, 0.042), m: null, c: skinC }, { g: G.hand(), m: T4(0, -0.28, 0), c: skinC }]), vcMat));
+    arms.push({ up, fo, hand: null });
   }
-  // kaki
   const legs = [];
-  const shoeM = std(pick([0xf8fafc, 0x111827, 0xdc2626]), { roughness: 0.6 });
   for (const sx of [-1, 1]) {
-    const th = limb(0.45, 0.075, pants); th.piv.position.set(sx * 0.09, -0.02, 0); hips.add(th.piv);
-    const sn = limb(0.44, 0.06, pants); sn.piv.position.copy(th.end.position); th.piv.add(sn.piv);
-    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.07, 0.22), shoeM); shoe.position.set(0, -0.45, 0.05); sn.piv.add(shoe);
-    legs.push({ th: th.piv, sn: sn.piv });
+    const th = new THREE.Group(); th.position.set(sx * 0.09, -0.02, 0); hips.add(th); th.add(new THREE.Mesh(G.seg(0.45, 0.075), pantsM));
+    const sn = new THREE.Group(); sn.position.y = -0.45; th.add(sn); sn.add(new THREE.Mesh(mergeColored([{ g: G.seg(0.44, 0.06), m: null, c: pantsC }, { g: G.shoe(), m: T4(0, -0.45, 0.05), c: shoeC }]), vcMat));
+    legs.push({ th, sn });
   }
-  if (opt.bag) { const bag = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.34, 0.12), std(pick([0x2563eb, 0xdc2626, 0x16a34a]))); bag.position.set(0, 0.3, -0.18); hips.add(bag); }
-  root.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-  root.userData = { hips, head, arms, legs, torso, phase: Math.random() * 6, controller: null, pose: 'stand' };
+  root.traverse((o) => { if (o.isMesh) o.castShadow = kind === 'staff' ? true : false; });
+  root.userData = { hips, head, arms, legs, phase: Math.random() * 6, controller: null, pose: 'stand' };
   return root;
 }
 
