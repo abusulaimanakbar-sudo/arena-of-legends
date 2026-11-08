@@ -12,19 +12,21 @@
 <header id="top">
   <div class="brand"><span class="sym">△○✕□</span> RAFLI <b>PLAYSTATION</b></div>
   <div class="stats">
+    <div class="chip" id="clock">Hari 1 · 09:00</div>
     <div class="money"><small>Uang</small><b id="money">Rp 0</b></div>
     <div><small>Per detik</small><b id="ips">Rp 0</b></div>
     <div><small>Reputasi</small><b id="rep">★☆☆☆☆</b></div>
-    <button id="btnSnd" title="Suara">🔊</button>
+    <div><small>Franchise</small><b id="stars">👑 0</b></div>
   </div>
+  <div class="btns"><button id="btnHH">⚡ Happy Hour</button><button id="btnMus" title="Musik">🎵</button><button id="btnSfx" title="Efek suara">🔊</button></div>
 </header>
-<button id="collect" class="hidden">💰 Ambil semua</button>
+<aside id="quests"></aside>
+<div id="banner"></div>
 <div id="toast"></div>
 <section id="shop">
   <div class="tabs" id="tabs"></div>
-  <div class="cards" id="cards"></div>
+  <div id="cards"></div>
 </section>
-<div id="hint">Seret = putar kamera · Scroll = zoom · Tap koin 💰 untuk ambil uang</div>
 <div id="welcome" class="hidden"><div class="box"><h2>Selamat datang kembali!</h2><p id="welcomeTxt"></p><button id="welcomeOk">Ambil</button></div></div>
 <script type="module" src="js/main.js"></script>
 </body>
