@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GameAudio } from './audio.js';
-import { initPeople, syncPeople, mergeByMaterial, std, canvasTex, emojiSprite, textSprite, dialogSprite, makeConsole, makeSofa, makeChair, makeFood, makePerson, attachController, detachController, poseWalk, poseStand, poseSitPlay, poseCheer, poseType, applyGesture } from './models.js';
+import { createDecals, makePlant, initPeople, syncPeople, mergeByMaterial, std, canvasTex, emojiSprite, textSprite, dialogSprite, makeConsole, makeSofa, makeChair, makeFood, makePerson, attachController, detachController, poseWalk, poseStand, poseSitPlay, poseCheer, poseType, applyGesture } from './models.js';
 import { buildWorld, BAYS } from './world.js';
 import { NAMES, LINES, pick, newTrait } from './dialog.js';
 import { DEFAULT_CFG, merge, clone, setPath } from './shared/config.js';
@@ -94,8 +94,8 @@ function incomeRate() { const nowT = performance.now(); while (incomeWin.length 
 
 // ================= THREE: scene =================
 const COARSE = matchMedia('(pointer:coarse)').matches;
-const renderer = new THREE.WebGLRenderer({ canvas: $('gl'), antialias: !COARSE, powerPreference: 'high-performance' });
-renderer.setPixelRatio(COARSE ? 0.8 : 1);
+const renderer = new THREE.WebGLRenderer({ canvas: $('gl'), antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap; renderer.shadowMap.autoUpdate = false;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.15;
 const scene = new THREE.Scene(); scene.background = new THREE.Color(0x8cc4f0); scene.fog = new THREE.Fog(0x8cc4f0, 70, 330);
@@ -105,6 +105,7 @@ const sun = new THREE.DirectionalLight(0xfff0dd, 1.6); sun.castShadow = true; su
 Object.assign(sun.shadow.camera, { left: -34, right: 34, top: 30, bottom: -30, near: 1, far: 120 }); scene.add(sun, sun.target);
 initPeople(scene);
 const world = buildWorld(scene);
+const pools = createDecals(scene, 24, { additive: true, opacity: 0.55, color: 0xffffff });
 
 const HX = 12, HZ = 9;
 const room = new THREE.Group(); scene.add(room);
@@ -198,7 +199,7 @@ function buildDecor() {
     const mk = (txt, c1, c2) => canvasTex(128, 180, (g, w, h) => { const gr = g.createLinearGradient(0, 0, w, h); gr.addColorStop(0, c1); gr.addColorStop(1, c2); g.fillStyle = gr; g.fillRect(0, 0, w, h); g.fillStyle = '#fff'; g.font = 'bold 22px sans-serif'; g.textAlign = 'center'; g.fillText(txt, w / 2, h - 18); g.font = '60px sans-serif'; g.fillText('🎮', w / 2, 90); });
     [['FIFA', '#0a7', '#046'], ['GTA', '#f60', '#a02'], ['TEKKEN', '#c22', '#413'], ['GOW', '#456', '#123'], ['F1', '#d22', '#613']].forEach(([t, a, b], i) => { const p = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 1.4), new THREE.MeshBasicMaterial({ map: mk(t, a, b) })); p.position.set(-HX + 0.2, 2.6, -6.5 + i * 2.5); p.rotation.y = Math.PI / 2; decorGroup.add(p); });
   }
-  if (S.decor >= 2) for (const [x, z] of [[HX - 0.8, -HZ + 0.9], [-HX + 0.8, HZ - 0.8], [-11.2, -6.6], [11.2, 3.6]]) { const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.24, 0.5, 14), std(0x7a4a2a)); pot.position.set(x, 0.25, z); const lf = new THREE.Mesh(new THREE.IcosahedronGeometry(0.5, 1), std(0x2d9b4e, { roughness: 0.9 })); lf.position.set(x, 0.95, z); lf.scale.y = 1.3; lf.castShadow = true; decorGroup.add(pot, lf); addObs(x, z, 0.4, 0.4); }
+  if (S.decor >= 2) for (const [x, z] of [[HX - 0.8, -HZ + 0.9], [-HX + 0.8, HZ - 0.8], [-11.2, -6.6], [11.2, 3.6]]) { const pl = makePlant(1.15); pl.position.set(x, 0, z); pl.rotation.y = x * 3.1; decorGroup.add(pl); addObs(x, z, 0.4, 0.4); }
   if (S.decor >= 3) for (const [x, c] of [[-7, 0x3b82f6], [0, 0xf472b6], [7, 0x4ade80]]) { const m = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.035, 8, 32), new THREE.MeshBasicMaterial({ color: c, toneMapped: false })); m.position.set(x, 3.5, 1.5); m.rotation.x = Math.PI / 2; decorGroup.add(m); }
   if (S.ac >= 1) { const mk2 = (x) => { const ac = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.4, 0.35), std(0xeeeeee, { roughness: 0.4 })); ac.position.set(x, 3.95, -HZ + 0.4); decorGroup.add(ac); }; mk2(-6.2); if (S.ac >= 2) mk2(6.2); if (S.ac >= 3) mk2(0); }
   mergeByMaterial(decorGroup);
@@ -794,19 +795,20 @@ addEventListener('pointerdown', () => { try { if (matchMedia('(pointer:coarse)')
 
 // ================= KUALITAS GRAFIS (otomatis menyesuaikan FPS) =================
 const GFX_MODES = ['auto', 'low', 'med', 'high']; const GFX_NAME = { auto: 'Otomatis', low: 'Rendah', med: 'Sedang', high: 'Tinggi' };
-const QL = { mode: lsGet('rafli-gfx', 'auto'), level: COARSE ? 0 : 1, ema: 50, acc: 0, changedAt: 0 };
+const QL = { mode: lsGet('rafli-gfx', 'auto'), level: COARSE ? 1 : 1, ema: 50, acc: 0, changedAt: 0, res: 1 };
 let shadowEvery = 4, tvEvery = 0.14, shadowTick = 0, glowOn = true, rainDensity = 1;
 function applyQuality(level) {
-  QL.level = level; const dpr = window.devicePixelRatio || 1; renderer.setPixelRatio([0.8, Math.min(1, dpr), Math.min(1.5, dpr)][level]); renderer.setSize(innerWidth, innerHeight, false);
+  QL.level = level; const dpr = window.devicePixelRatio || 1; const area = Math.max(1, innerWidth * innerHeight); const budget = [1.0e6, 1.6e6, 2.6e6][level]; const cap = [1.25, 1.5, 2][level]; renderer.setPixelRatio(Math.max(0.6, Math.min(dpr, cap, Math.sqrt(budget / area)) * QL.res)); renderer.setSize(innerWidth, innerHeight, false);
   const wantShadow = level >= 1; if (sun.castShadow !== wantShadow) sun.castShadow = wantShadow;
   const sz = level >= 2 ? 2048 : 1024; if (sun.shadow.mapSize.x !== sz) { sun.shadow.mapSize.set(sz, sz); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
-  shadowEvery = [99, 4, 2][level]; tvEvery = [0.25, 0.14, 0.09][level]; for (const l of [neonL, neonR, ...ceilL, ...world.lotLights]) l.visible = level >= 1; glowOn = level >= 1; rainDensity = [0.35, 0.7, 1][level]; world.setRainDensity(rainDensity); renderer.shadowMap.needsUpdate = true; QL.changedAt = performance.now(); QL.ema = 45;
+  shadowEvery = [99, 4, 2][level]; tvEvery = [0.25, 0.14, 0.09][level]; for (const l of [neonL, neonR, ...ceilL, ...world.lotLights]) l.visible = level >= 1 && (level >= 2 || !COARSE || true); glowOn = true; rainDensity = [0.35, 0.7, 1][level]; world.setRainDensity(rainDensity); renderer.shadowMap.needsUpdate = true; QL.changedAt = performance.now(); QL.ema = 45;
 }
 function setGfxMode(m) { QL.mode = m; lsSet('rafli-gfx', m); applyQuality(m === 'low' ? 0 : m === 'med' ? 1 : m === 'high' ? 2 : QL.level); $('btnGfx').title = 'Grafis: ' + GFX_NAME[m]; $('btnGfx').textContent = { auto: '🖥A', low: '🖥L', med: '🖥M', high: '🖥H' }[m]; }
 $('btnGfx').onclick = () => { audio.init(); const m = GFX_MODES[(GFX_MODES.indexOf(QL.mode) + 1) % GFX_MODES.length]; setGfxMode(m); toast('Grafis: ' + GFX_NAME[m]); };
 function governQuality(fps, now) {
   QL.ema = QL.ema * 0.92 + fps * 0.08; QL.acc += 1; if (QL.mode !== 'auto' || QL.acc < 90 || now - QL.changedAt < 5000) return; QL.acc = 0;
-  if (QL.ema < 32 && QL.level > 0) applyQuality(QL.level - 1); else if (QL.ema > 57 && QL.level < 2 && now - QL.changedAt > 15000) applyQuality(QL.level + 1);
+  if (QL.ema < 30) { if (QL.res > 0.8) { QL.res = Math.max(0.8, QL.res - 0.1); applyQuality(QL.level); } else if (QL.level > 0) { QL.res = 1; applyQuality(QL.level - 1); } else if (QL.res > 0.65) { QL.res = Math.max(0.65, QL.res - 0.07); applyQuality(0); } }
+  else if (QL.ema > 57 && now - QL.changedAt > 15000) { if (QL.res < 1) { QL.res = Math.min(1, QL.res + 0.1); applyQuality(QL.level); } else if (QL.level < 2) applyQuality(QL.level + 1); }
 }
 
 // ================= LOOP =================
@@ -818,6 +820,7 @@ function simStep(dt) {
   cashier.m.p = cashier; if (cashierBusy && cashierBusy.state === 'pay') poseType(cashier, clockT); else poseStand(cashier, clockT); finishPose(cashier.m);
   let near = false; const dp = new THREE.Vector3(0, 0, HZ); for (const m of allMembers()) if (m.p.position.distanceTo(dp) < 2.6) near = true; for (const s of staffNPCs) if (s.p.position.distanceTo(dp) < 2.6) near = true;
   const tx = near ? 1.55 : 0.75; doorL.position.x += (-tx - doorL.position.x) * Math.min(1, dt * 6); doorR.position.x += (tx - doorR.position.x) * Math.min(1, dt * 6);
+  pools.begin(); for (const st of stations) { if (!S.st[st.i].o) continue; const pw = toWorld(st, 0, 0, 1.7); pools.add(pw.x, pw.z, 4.4, 3.4, st.slot.ry, 0.07, blackout ? 0x000000 : st.busy ? [0x22c55e, 0xf97316, 0xef4444, 0x3b82f6, 0xa855f7][st.genre % 5] : 0x3b6fd8); } pools.end();
   for (const st of stations) { if (!S.st[st.i].o) continue; if ((st.flash -= dt) <= 0) { st.flash = st.busy ? tvEvery : tvEvery * 1.4; drawTV(st, clockT + st.i * 3, st.busy); } if (st.glow) { st.glow.color.set(st.busy ? GCOL[st.genre % 5] : '#5588ff'); st.glow.opacity = blackout || !glowOn ? 0 : st.busy ? 0.55 + Math.sin(clockT * 12 + st.i) * 0.12 : 0.28; } if (st.led) st.led.material.color.set(blackout ? 0x000000 : st.busy ? 0x33ff88 : 0x3b82f6); }
   blipT -= dt; if (blipT <= 0) { blipT = 0.3 + Math.random() * 0.6; if (stations.some((s) => s.busy) && !blackout) audio.blip(); }
   carT -= dt; if (carT <= 0) { carT = 10 + Math.random() * 12; audio.car(); }

@@ -209,20 +209,20 @@ const PART_DEFS = [ // [mesh, node, geometri, offset, peran-warna, syarat]
   ['th', 'thL', () => G.seg(0.45, 0.075), I4, 'pants'], ['th', 'thR', () => G.seg(0.45, 0.075), I4, 'pants'], ['sn', 'snL', () => G.seg(0.44, 0.06), I4, 'pants'], ['sn', 'snR', () => G.seg(0.44, 0.06), I4, 'pants'],
   ['shoe', 'snL', () => G.shoe(), T4(0, -0.45, 0.05), 'shoe'], ['shoe', 'snR', () => G.shoe(), T4(0, -0.45, 0.05), 'shoe'],
 ];
-const peopleReg = []; let peopleMeshes = null; const _pm = new THREE.Matrix4(); const PCAP = 96;
+const peopleReg = []; let peopleMeshes = null, peopleDecals = null; const _pm = new THREE.Matrix4(); const PCAP = 96;
 export function initPeople(scene) {
-  if (peopleMeshes) return; peopleMeshes = {}; const mat = new THREE.MeshLambertMaterial({ color: 0xffffff }); const per = {};
+  if (peopleMeshes) return; peopleMeshes = {}; peopleDecals = createDecals(scene, PCAP, { opacity: 0.5 }); const mat = new THREE.MeshLambertMaterial({ color: 0xffffff }); const per = {};
   for (const d of PART_DEFS) per[d[0]] = (per[d[0]] || 0) + 1;
   for (const [name, n] of Object.entries(per)) { const geo = PART_DEFS.find((d) => d[0] === name)[2](); const m = new THREE.InstancedMesh(geo, mat, PCAP * n); m.count = 0; m.frustumCulled = false; m.castShadow = false; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(m); peopleMeshes[name] = m; }
 }
 export function syncPeople() {
   if (!peopleMeshes) return; for (let i = peopleReg.length - 1; i >= 0; i--) if (!peopleReg[i].parent) peopleReg.splice(i, 1);
-  const cnt = {}; for (const k in peopleMeshes) cnt[k] = 0;
+  const cnt = {}; for (const k in peopleMeshes) cnt[k] = 0; peopleDecals.begin();
   for (const p of peopleReg) {
-    if (!p.visible) continue; p.updateMatrixWorld(true); const u = p.userData, nd = u.nodes;
+    if (!p.visible) continue; p.updateMatrixWorld(true); peopleDecals.add(p.position.x, p.position.z, 0.95, 0.95, 0, 0.09); const u = p.userData, nd = u.nodes;
     for (const d of PART_DEFS) { if (d[5] && !u.flags[d[5]]) continue; const mesh = peopleMeshes[d[0]]; const k = cnt[d[0]]; if (k >= mesh.instanceMatrix.count) continue; _pm.multiplyMatrices(nd[d[1]].matrixWorld, d[3]); mesh.setMatrixAt(k, _pm); mesh.setColorAt(k, u.col[d[4]]); cnt[d[0]] = k + 1; }
   }
-  for (const k in peopleMeshes) { const m = peopleMeshes[k]; m.count = cnt[k]; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
+  peopleDecals.end(); for (const k in peopleMeshes) { const m = peopleMeshes[k]; m.count = cnt[k]; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
 }
 export function makePerson(opt = {}) {
   const root = new THREE.Group(); const kind = opt.kind || 'cust';
@@ -274,3 +274,24 @@ export function poseCheer(p, t) {
 }
 export function poseTalk(p, t) { const u = p.userData; poseStand(p, t); u.arms[1].up.rotation.x = -0.6; u.arms[1].fo.rotation.x = -1.2 + Math.sin(t * 5) * 0.15; }
 export function poseType(p, t) { const u = p.userData; poseStand(p, t); u.arms.forEach((a, i) => { a.up.rotation.x = -0.7; a.fo.rotation.x = -1.0 + Math.sin(t * 12 + i * 3) * 0.12; }); u.head.rotation.x = 0.25; }
+
+// ===== Bayangan palsu (decal) & kolam cahaya: murah, tanpa shadow-map =====
+let _blob = null;
+export function blobTex() { return _blob || (_blob = canvasTex(64, 64, (g) => { const gr = g.createRadialGradient(32, 32, 1, 32, 32, 31); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.55, 'rgba(255,255,255,0.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); })); }
+export function createDecals(scene, cap, { additive = false, opacity = 0.5, color = 0x000000 } = {}) {
+  const geo = new THREE.PlaneGeometry(1, 1); geo.rotateX(-Math.PI / 2);
+  const mat = new THREE.MeshBasicMaterial({ map: blobTex(), color, transparent: true, opacity, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  const mesh = new THREE.InstancedMesh(geo, mat, cap); mesh.count = 0; mesh.frustumCulled = false; mesh.renderOrder = 2; mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(mesh);
+  const M = new THREE.Matrix4(), P = new THREE.Vector3(), Q = new THREE.Quaternion(), E = new THREE.Euler(), Sc = new THREE.Vector3(), C = new THREE.Color();
+  return { mesh, n: 0, begin() { this.n = 0; }, add(x, z, sx, sz, rot = 0, y = 0.08, col = null) { if (this.n >= cap) return; E.set(0, rot, 0); Q.setFromEuler(E); M.compose(P.set(x, y, z), Q, Sc.set(sx, 1, sz)); mesh.setMatrixAt(this.n, M); if (col !== null) mesh.setColorAt(this.n, C.set(col)); this.n++; }, end() { mesh.count = this.n; mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true; } };
+}
+
+// ===== Tanaman hias interior (daun melengkung, 1 mesh) =====
+export function makePlant(scale = 1) {
+  const parts = []; const M = new THREE.Matrix4();
+  parts.push({ g: new THREE.CylinderGeometry(0.3, 0.22, 0.5, 10), m: new THREE.Matrix4().makeTranslation(0, 0.25, 0), c: 0xb4693a }, { g: new THREE.CylinderGeometry(0.28, 0.28, 0.04, 10), m: new THREE.Matrix4().makeTranslation(0, 0.5, 0), c: 0x3d2a1c });
+  const leaf = new THREE.SphereGeometry(0.5, 7, 5); leaf.scale(0.2, 0.035, 0.55); leaf.translate(0, 0, 0.3);
+  const greens = [0x2f8f46, 0x3da356, 0x56bf63, 0x268a3c];
+  for (let i = 0; i < 11; i++) { const a = i * 2.4; const tilt = -0.35 - 0.12 * (i % 4); M.compose(new THREE.Vector3(Math.cos(a) * 0.05, 0.55 + 0.05 * (i % 3), Math.sin(a) * 0.05), new THREE.Quaternion().setFromEuler(new THREE.Euler(tilt, a, 0, 'YXZ')), new THREE.Vector3(1, 1, 1 + 0.15 * (i % 3))); parts.push({ g: leaf, m: M.clone(), c: greens[i % 4] }); }
+  const g = new THREE.Group(); const mesh = new THREE.Mesh(mergeColored(parts), vcMat); g.add(mesh); g.scale.setScalar(scale); return g;
+}
