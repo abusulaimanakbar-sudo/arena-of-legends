@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GameAudio } from './audio.js';
-import { mergeByMaterial, std, canvasTex, emojiSprite, textSprite, dialogSprite, makeConsole, makeSofa, makeChair, makeFood, makePerson, attachController, detachController, poseWalk, poseStand, poseSitPlay, poseCheer, poseType, applyGesture } from './models.js';
+import { initPeople, syncPeople, mergeByMaterial, std, canvasTex, emojiSprite, textSprite, dialogSprite, makeConsole, makeSofa, makeChair, makeFood, makePerson, attachController, detachController, poseWalk, poseStand, poseSitPlay, poseCheer, poseType, applyGesture } from './models.js';
 import { buildWorld, BAYS } from './world.js';
 import { NAMES, LINES, pick, newTrait } from './dialog.js';
 import { DEFAULT_CFG, merge, clone, setPath } from './shared/config.js';
@@ -103,6 +103,7 @@ const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 900);
 const hemi = new THREE.HemisphereLight(0xaab4ff, 0x3a3a30, 0.9); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff0dd, 1.6); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024);
 Object.assign(sun.shadow.camera, { left: -34, right: 34, top: 30, bottom: -30, near: 1, far: 120 }); scene.add(sun, sun.target);
+initPeople(scene);
 const world = buildWorld(scene);
 
 const HX = 12, HZ = 9;
@@ -771,9 +772,11 @@ addEventListener('pointerup', (e) => { const had = pts.delete(e.pointerId); if (
 cv.addEventListener('wheel', (e) => { camT.dist = Math.max(4, Math.min(50, camT.dist + e.deltaY * 0.03)); e.preventDefault(); }, { passive: false });
 function tap(e) {
   ptr.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ptr, camera);
-  const ms = allMembers().filter((m) => m.alive); const hits = ray.intersectObjects(ms.map((m) => m.p), true);
-  if (hits.length) { let o = hits[0].object; const mm = ms.find((m) => { let x = o; while (x) { if (x === m.p) return true; x = x.parent; } return false; }); if (mm) { audio.click(); showNpc(mm); return; } }
-  const ch = ray.intersectObjects([cashier, counter], true)[0]; if (ch) { const bonus = Math.max(150, incomeRate() * 1.2); earn(bonus, 'tip'); S.cnt.tap++; audio.coin(); popup(CASHIER_POS.clone().add(new THREE.Vector3(0, 2.8, -0.4)), '+' + money(bonus), '#ffe27a'); say(cashier.m, pick(['Silakan kak!', 'Makasih ya!', 'Ada yang bisa dibantu?']), 'say', 2); act(cashier.m, 'wave', 1.6); return; }
+  const ms = allMembers().filter((m) => m.alive); let bestM = null, bd0 = 0.7; const _pt = new THREE.Vector3();
+  for (const m of ms) { _pt.set(m.p.position.x, m.p.position.y + 0.95, m.p.position.z); const d = ray.ray.distanceToPoint(_pt); if (d < bd0) { bd0 = d; bestM = m; } }
+  _pt.set(cashier.position.x, 1.0, cashier.position.z); const dc = ray.ray.distanceToPoint(_pt);
+  if (bestM && bd0 <= dc) { audio.click(); showNpc(bestM); return; }
+  const ch = (dc < 0.7) ? true : ray.intersectObjects([counter], true)[0]; if (ch) { const bonus = Math.max(150, incomeRate() * 1.2); earn(bonus, 'tip'); S.cnt.tap++; audio.coin(); popup(CASHIER_POS.clone().add(new THREE.Vector3(0, 2.8, -0.4)), '+' + money(bonus), '#ffe27a'); say(cashier.m, pick(['Silakan kak!', 'Makasih ya!', 'Ada yang bisa dibantu?']), 'say', 2); act(cashier.m, 'wave', 1.6); return; }
   const brk = stations.find((s) => s.broken && ray.ray.distanceToPoint(toWorld(s, 0, 2.9, 1.6)) < 1.4); if (brk) { fixStation(brk, false); return; }
   let best = null, bd = 1e9; stations.forEach((s) => { const c = toWorld(s, 0, 1, 1.6); const r = ray.ray.distanceToPoint(c); if (r < 1.6) { const d = c.distanceTo(ray.ray.origin); if (d < bd) { bd = d; best = s; } } });
   if (best) { selected = best.i; tab = 'st'; audio.click(); renderAll(); if (!S.st[best.i].o && S.money >= SLOT_COST[best.i]) buy('slot' + best.i); }
@@ -792,12 +795,12 @@ addEventListener('pointerdown', () => { try { if (matchMedia('(pointer:coarse)')
 // ================= KUALITAS GRAFIS (otomatis menyesuaikan FPS) =================
 const GFX_MODES = ['auto', 'low', 'med', 'high']; const GFX_NAME = { auto: 'Otomatis', low: 'Rendah', med: 'Sedang', high: 'Tinggi' };
 const QL = { mode: lsGet('rafli-gfx', 'auto'), level: COARSE ? 0 : 1, ema: 50, acc: 0, changedAt: 0 };
-let shadowEvery = 4, tvEvery = 0.14, shadowTick = 0;
+let shadowEvery = 4, tvEvery = 0.14, shadowTick = 0, glowOn = true, rainDensity = 1;
 function applyQuality(level) {
-  QL.level = level; const dpr = window.devicePixelRatio || 1; renderer.setPixelRatio([0.7, Math.min(1, dpr), Math.min(1.5, dpr)][level]); renderer.setSize(innerWidth, innerHeight, false);
+  QL.level = level; const dpr = window.devicePixelRatio || 1; renderer.setPixelRatio([0.8, Math.min(1, dpr), Math.min(1.5, dpr)][level]); renderer.setSize(innerWidth, innerHeight, false);
   const wantShadow = level >= 1; if (sun.castShadow !== wantShadow) sun.castShadow = wantShadow;
   const sz = level >= 2 ? 2048 : 1024; if (sun.shadow.mapSize.x !== sz) { sun.shadow.mapSize.set(sz, sz); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
-  shadowEvery = [99, 4, 2][level]; tvEvery = [0.25, 0.14, 0.09][level]; renderer.shadowMap.needsUpdate = true; QL.changedAt = performance.now(); QL.ema = 45;
+  shadowEvery = [99, 4, 2][level]; tvEvery = [0.25, 0.14, 0.09][level]; for (const l of [neonL, neonR, ...ceilL, ...world.lotLights]) l.visible = level >= 1; glowOn = level >= 1; rainDensity = [0.35, 0.7, 1][level]; world.setRainDensity(rainDensity); renderer.shadowMap.needsUpdate = true; QL.changedAt = performance.now(); QL.ema = 45;
 }
 function setGfxMode(m) { QL.mode = m; lsSet('rafli-gfx', m); applyQuality(m === 'low' ? 0 : m === 'med' ? 1 : m === 'high' ? 2 : QL.level); $('btnGfx').title = 'Grafis: ' + GFX_NAME[m]; $('btnGfx').textContent = { auto: '🖥A', low: '🖥L', med: '🖥M', high: '🖥H' }[m]; }
 $('btnGfx').onclick = () => { audio.init(); const m = GFX_MODES[(GFX_MODES.indexOf(QL.mode) + 1) % GFX_MODES.length]; setGfxMode(m); toast('Grafis: ' + GFX_NAME[m]); };
@@ -815,16 +818,16 @@ function simStep(dt) {
   cashier.m.p = cashier; if (cashierBusy && cashierBusy.state === 'pay') poseType(cashier, clockT); else poseStand(cashier, clockT); finishPose(cashier.m);
   let near = false; const dp = new THREE.Vector3(0, 0, HZ); for (const m of allMembers()) if (m.p.position.distanceTo(dp) < 2.6) near = true; for (const s of staffNPCs) if (s.p.position.distanceTo(dp) < 2.6) near = true;
   const tx = near ? 1.55 : 0.75; doorL.position.x += (-tx - doorL.position.x) * Math.min(1, dt * 6); doorR.position.x += (tx - doorR.position.x) * Math.min(1, dt * 6);
-  for (const st of stations) { if (!S.st[st.i].o) continue; if ((st.flash -= dt) <= 0) { st.flash = st.busy ? tvEvery : tvEvery * 1.4; drawTV(st, clockT + st.i * 3, st.busy); } if (st.glow) { st.glow.color.set(st.busy ? GCOL[st.genre % 5] : '#5588ff'); st.glow.opacity = blackout ? 0 : st.busy ? 0.55 + Math.sin(clockT * 12 + st.i) * 0.12 : 0.28; } if (st.led) st.led.material.color.set(blackout ? 0x000000 : st.busy ? 0x33ff88 : 0x3b82f6); }
+  for (const st of stations) { if (!S.st[st.i].o) continue; if ((st.flash -= dt) <= 0) { st.flash = st.busy ? tvEvery : tvEvery * 1.4; drawTV(st, clockT + st.i * 3, st.busy); } if (st.glow) { st.glow.color.set(st.busy ? GCOL[st.genre % 5] : '#5588ff'); st.glow.opacity = blackout || !glowOn ? 0 : st.busy ? 0.55 + Math.sin(clockT * 12 + st.i) * 0.12 : 0.28; } if (st.led) st.led.material.color.set(blackout ? 0x000000 : st.busy ? 0x33ff88 : 0x3b82f6); }
   blipT -= dt; if (blipT <= 0) { blipT = 0.3 + Math.random() * 0.6; if (stations.some((s) => s.busy) && !blackout) audio.blip(); }
   carT -= dt; if (carT <= 0) { carT = 10 + Math.random() * 12; audio.car(); }
 }
 function frame(now) {
   const rawDt = (now - last) / 1000; const rdt = Math.min(0.06, rawDt); last = now; if (rawDt > 0 && rawDt < 1) governQuality(1 / rawDt, now);
   if (++shadowTick % shadowEvery === 0) renderer.shadowMap.needsUpdate = true;
-  for (let i = 0; i < TS; i++) simStep(rdt);
+  const tA = performance.now(); for (let i = 0; i < TS; i++) simStep(rdt); const tB = performance.now();
   const raining = Date.now() < rainUntil; audio.setRain(raining); if (raining) { thunderT -= rdt; if (thunderT <= 0) { thunderT = 12 + Math.random() * 14; audio.thunder(); } }
-  const env = world.update(rdt * TS, S.clock, raining, camera.position, { sun, hemi, fog: scene.fog }); sun.target.position.set(0, 0, 8);
+  const tC = performance.now(); const env = world.update(rdt * TS, S.clock, raining, camera.position, { sun, hemi, fog: scene.fog }); sun.target.position.set(0, 0, 8);
   if (blackout) { hemi.intensity *= 0.55; sun.intensity *= 0.7; }
   const nightK = env.night; ceilL.forEach((l) => { l.intensity = blackout || QL.level < 1 ? 0 : 11 + nightK * 8; }); neonL.intensity = blackout ? 0 : (14 + Math.sin(clockT * 2) * 3) * (0.7 + nightK * 1.1); neonR.intensity = blackout ? 0 : (14 + Math.cos(clockT * 2.3) * 3) * (0.7 + nightK * 1.1); if (ledState !== blackout) { ledState = blackout; ledMats.forEach((m, i) => m.color.set([0xf472b6, 0x3b82f6, 0x8b5cf6][i]).multiplyScalar(blackout ? 0.05 : 1)); }
   pendT -= rdt; if (pendT <= 0) { pendT = 0.3; pend.forEach((m) => m.material.color.setRGB(blackout ? 0.1 : 1, blackout ? 0.1 : 0.94 - nightK * 0.1, blackout ? 0.1 : 0.8 - nightK * 0.3)); }
@@ -841,8 +844,9 @@ function frame(now) {
     qT += 0.25; if (qT > 1) { qT = 0; checkQuests(); checkAch(); updateTutorial(); renderQuestMini(); if (npcSel) updateNpc(); } affordRefresh();
   }
   saveT += rdt; if (saveT > 5) { saveT = 0; save(); }
-  renderer.render(scene, camera); requestAnimationFrame(frame);
+  syncPeople(); const tD = performance.now(); renderer.render(scene, camera); const tE = performance.now(); PERF.sim += (tB - tA - PERF.sim) * 0.1; PERF.rest += (tD - tB - PERF.rest) * 0.1; PERF.render += (tE - tD - PERF.render) * 0.1; void tC; requestAnimationFrame(frame);
 }
+const PERF = (window.__perf = { sim: 0, rest: 0, render: 0 });
 let lastAff = '', lastAffT = 0;
 function affordRefresh() { const now = performance.now(); const k = tab + selected + S.day + (lastAff === '' ? 'x' : ''); if (k === lastAffK && now - lastAffT < 1500) return; lastAffK = k; lastAffT = now; lastAff = 'y'; const sc = $('cards').scrollTop; renderAll(); $('cards').scrollTop = sc; }
 let lastAffK = '';
@@ -902,7 +906,7 @@ function onLinkMsg(m) {
   else if (m.k === 'cmd') runCmd(m);
   else if (m.k === 'poll' || m.k === 'hello') sendState(true);
 }
-setInterval(() => { if (link.room) link.send({ k: 'tel', d: { money: S.money, ips: incomeRate(), profit: dayProfit(S.d), day: S.day, clock: S.clock, parties: parties.length, busy: stations.filter((x) => x.busy).length, rep: rep() } }, { remote: false }); }, 1000);
+setInterval(() => { if (link.room) link.send({ k: 'tel', d: { money: S.money, ips: incomeRate(), profit: dayProfit(S.d), day: S.day, clock: S.clock, parties: parties.length, busy: stations.filter((x) => x.busy).length, rep: rep() } }, { remote: false, store: false }); }, 1500);
 // ---- kotak pengaturan koneksi GM ----
 function updateLinkUI() { const el = $('linkStat'); if (!el) return; const st = linkStatus || {}; const ago = st.last ? Math.round((Date.now() - st.last) / 1000) + ' dtk lalu' : '—'; const rm = { off: 'mati', connecting: 'menyambung…', ok: 'tersambung ✓', error: 'gagal ✗ ' + (st.error || '') }[st.remote] || '—'; el.innerHTML = `Lokal: ${st.local ? 'siap ✓' : '—'} · Relay: ${rm}<br>Pesan GM terakhir: ${ago}`; $('btnLink').classList.toggle('on', !!linkCfg.room && (st.remote === 'ok' || st.local)); }
 $('btnLink').onclick = () => { audio.init(); $('linkRoom').value = linkCfg.room; $('linkServer').value = linkCfg.server; $('linkRemote').checked = linkCfg.remote !== false; $('linkBox').classList.remove('hidden'); updateLinkUI(); };

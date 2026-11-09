@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { makeCar, makeBike, mergeByMaterial, std } from './models.js';
 
+const bmCache = new Map(); const bm = (c) => { const k = 'a' + c; if (!bmCache.has(k)) bmCache.set(k, new THREE.MeshBasicMaterial({ color: c })); return bmCache.get(k); }; const bmt = (c) => { const k = 't' + c; if (!bmCache.has(k)) bmCache.set(k, new THREE.MeshBasicMaterial({ color: c, toneMapped: false })); return bmCache.get(k); };
 const lowStd = (color, o = {}) => std(color, { flatShading: true, ...o });
 function rng(seed) { let s = seed; return () => (s = (s * 16807) % 2147483647) / 2147483647; }
 
@@ -44,7 +45,7 @@ export function buildWorld(scene) {
   mk(60, 20, 0, 21.2, asphalt, 0.0);                                               // area parkir
   mk(220, 9, 0, 35.9, asphalt, 0.0);                                               // jalan raya
   mk(7, 6.2, LOT.entryX, 31.3, asphalt, 0.0); mk(7, 6.2, LOT.exitX, 31.3, asphalt, 0.0); // akses
-  const dash = new THREE.MeshBasicMaterial({ color: 0xf2c230 }), white = new THREE.MeshBasicMaterial({ color: 0xf2f2f2 });
+  const dash = bm(0xf2c230), white = bm(0xf2f2f2);
   for (let x = -105; x < 105; x += 6) { const d = new THREE.Mesh(new THREE.BoxGeometry(3, 0.02, 0.18), dash); d.position.set(x, 0.07, 35.9); stat.add(d); }
   mk(220, 0.15, 0, 31.6, lowStd(0x55586a, { flatShading: false }), 0.01); // bahu jalan
   // marka parkir (garis putih per bay) + angka + panah
@@ -53,9 +54,11 @@ export function buildWorld(scene) {
   lines.count = li; stat.add(lines);
   for (const zc of [LOT.rowA - 2.45, LOT.rowB + 2.45]) { const l = new THREE.Mesh(new THREE.BoxGeometry(LOT.n * LOT.spacing, 0.02, 0.12), white); l.position.set(LOT.x0 + (LOT.n - 1) * LOT.spacing / 2, 0.075, zc); stat.add(l); }
   const arrowTex = (() => { const c = document.createElement('canvas'); c.width = 128; c.height = 128; const g = c.getContext('2d'); g.fillStyle = '#f2f2f2'; g.beginPath(); g.moveTo(64, 10); g.lineTo(110, 70); g.lineTo(78, 70); g.lineTo(78, 118); g.lineTo(50, 118); g.lineTo(50, 70); g.lineTo(18, 70); g.closePath(); g.fill(); const t = new THREE.CanvasTexture(c); return t; })();
-  for (const x of [-9, 0, 9, 18]) { const a = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 2.2), new THREE.MeshBasicMaterial({ map: arrowTex, transparent: true })); a.rotation.set(-Math.PI / 2, 0, x < 0 ? -Math.PI / 2 : -Math.PI / 2); a.position.set(x, 0.08, LOT.lane); stat.add(a); }
+  const arrowMat = new THREE.MeshBasicMaterial({ map: arrowTex, transparent: true });
+  for (const x of [-9, 0, 9, 18]) { const a = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 2.2), arrowMat); a.rotation.set(-Math.PI / 2, 0, x < 0 ? -Math.PI / 2 : -Math.PI / 2); a.position.set(x, 0.08, LOT.lane); stat.add(a); }
   const pTex = (() => { const c = document.createElement('canvas'); c.width = 128; c.height = 128; const g = c.getContext('2d'); g.fillStyle = '#1d4ed8'; g.fillRect(0, 0, 128, 128); g.fillStyle = '#fff'; g.font = 'bold 100px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('P', 64, 70); return new THREE.CanvasTexture(c); })();
-  for (const x of [-21.5, 21.5]) { const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.6, 6), lowStd(0x555a66)); pole.position.set(x, 1.3, 12.2); const sg2 = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1.2), new THREE.MeshBasicMaterial({ map: pTex })); sg2.position.set(x, 2.8, 12.2); stat.add(pole, sg2); }
+  const pMat = new THREE.MeshBasicMaterial({ map: pTex });
+  for (const x of [-21.5, 21.5]) { const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.6, 6), lowStd(0x555a66)); pole.position.set(x, 1.3, 12.2); const sg2 = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1.2), pMat); sg2.position.set(x, 2.8, 12.2); stat.add(pole, sg2); }
   // pembatas parkir (pagar rendah + semak)
   const fenceM = lowStd(0xe5e7eb); for (const [x0, x1] of [[-30, -26], [26, 30]]) void x0, x1;
   const hedge = new THREE.Mesh(new THREE.BoxGeometry(60, 0.8, 0.8), lowStd(0x2f7a3a)); hedge.position.set(0, 0.4, 29.2); stat.add(hedge);
@@ -65,7 +68,7 @@ export function buildWorld(scene) {
   const lampMats = []; const lampGeo = new THREE.CylinderGeometry(0.07, 0.1, 6, 6); const lampHead = new THREE.SphereGeometry(0.35, 8, 6);
   const halo = (() => { const c = document.createElement('canvas'); c.width = 64; c.height = 64; const g = c.getContext('2d'); const gr = g.createRadialGradient(32, 32, 2, 32, 32, 32); gr.addColorStop(0, 'rgba(255,230,160,0.9)'); gr.addColorStop(1, 'rgba(255,230,160,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); })();
   const lotLights = []; for (const [x, z] of [[-10, 21], [10, 21]]) { const l = new THREE.PointLight(0xffe2a8, 0, 30); l.position.set(x, 6, z); root.add(l); lotLights.push(l); }
-  const lampHeadMat = new THREE.MeshBasicMaterial({ color: 0xfff0c0, toneMapped: false }); lampMats.push(lampHeadMat); const haloPos = [];
+  const lampHeadMat = bmt(0xfff0c0); lampMats.push(lampHeadMat); const haloPos = [];
   const addLamp = (x, z) => { const p = new THREE.Mesh(lampGeo, lowStd(0x4b5060)); p.position.set(x, 3, z); const h = new THREE.Mesh(lampHead, lampHeadMat); h.position.set(x, 6.1, z); haloPos.push(x, 6.1, z); stat.add(p, h); };
   for (let x = -60; x <= 60; x += 14) addLamp(x, 12.4); for (let x = -60; x <= 60; x += 14) addLamp(x, 31.9);
   for (const x of [-26, 26]) for (const z of [15, 27]) addLamp(x, z);
@@ -88,7 +91,7 @@ export function buildWorld(scene) {
   for (const x of [-28, -20, 20, 28]) { const t = new THREE.Mesh(trunkG, lowStd(0x6b4426)); t.position.set(x, 1.1, 10.8); const b = new THREE.Mesh(ballG, lowStd(0x4aa84e)); b.position.set(x, 3.3, 10.8); t.castShadow = b.castShadow = true; stat.add(t, b); }
   // rumah-rumah low-poly
   const winMats = []; const houseCols = [0xf4d6a0, 0xe8a0a0, 0xa0c4e8, 0xc4e8a0, 0xe8e0a0, 0xd0b0e8]; const roofCols = [0xa33a2a, 0x4a5a8a, 0x7a4a2a];
-  for (let i = 0; i < 24; i++) { const side = i % 2 ? 1 : -1; const x = side * (38 + (i >> 1) * 7.5 + R() * 3); const z = -30 + R() * 90; if (Math.abs(x) < 50 && z > -14 && z < 14) continue; const g = new THREE.Group(); const w = 5 + R() * 3, d = 5 + R() * 3, h = 3 + R() * 2.5; const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), lowStd(houseCols[i % 6])); b.position.y = h / 2; const rf = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w, d) * 0.78, 2.2, 4), lowStd(roofCols[i % 3])); rf.position.y = h + 1.1; rf.rotation.y = Math.PI / 4; const wm = new THREE.MeshBasicMaterial({ color: 0x3b4a66, toneMapped: false }); winMats.push(wm); for (const sx of [-1, 1]) { const wn = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), wm); wn.position.set(sx * w * 0.25, h * 0.55, d / 2 + 0.02); g.add(wn); } b.castShadow = rf.castShadow = true; g.add(b, rf); g.position.set(x, 0, z); g.rotation.y = side > 0 ? -Math.PI / 2 + (R() - 0.5) * 0.3 : Math.PI / 2 + (R() - 0.5) * 0.3; stat.add(g); }
+  for (let i = 0; i < 24; i++) { const side = i % 2 ? 1 : -1; const x = side * (38 + (i >> 1) * 7.5 + R() * 3); const z = -30 + R() * 90; if (Math.abs(x) < 50 && z > -14 && z < 14) continue; const g = new THREE.Group(); const w = 5 + R() * 3, d = 5 + R() * 3, h = 3 + R() * 2.5; const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), lowStd(houseCols[i % 6])); b.position.y = h / 2; const rf = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w, d) * 0.78, 2.2, 4), lowStd(roofCols[i % 3])); rf.position.y = h + 1.1; rf.rotation.y = Math.PI / 4; const wm = bmt(0x3b4a66); winMats.push(wm); for (const sx of [-1, 1]) { const wn = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), wm); wn.position.set(sx * w * 0.25, h * 0.55, d / 2 + 0.02); g.add(wn); } b.castShadow = rf.castShadow = true; g.add(b, rf); g.position.set(x, 0, z); g.rotation.y = side > 0 ? -Math.PI / 2 + (R() - 0.5) * 0.3 : Math.PI / 2 + (R() - 0.5) * 0.3; stat.add(g); }
   // bukit belakang toko + pagar belakang
   for (let i = 0; i < 7; i++) { const t = new THREE.Mesh(new THREE.ConeGeometry(2.6 + R() * 1.2, 6 + R() * 3, 6), lowStd(0x2f7a3a)); t.position.set(-30 + i * 10 + R() * 3, 3.2, -16 - R() * 6); t.castShadow = true; stat.add(t); }
 
@@ -103,12 +106,12 @@ export function buildWorld(scene) {
       if (i >= n) { const pad = new THREE.Mesh(new THREE.BoxGeometry(18, 0.15, 14), lowStd(0x3a3f66, { flatShading: false, transparent: true, opacity: 0.55 })); pad.position.y = 0.05; const tb = new THREE.Mesh(new THREE.PlaneGeometry(9, 1.7), new THREE.MeshBasicMaterial({ map: signTex('🔒 LAHAN ' + b.name), transparent: true })); tb.position.set(0, 3.5, 5); g.add(pad, tb); branchG.add(g); return; }
       const body = new THREE.Mesh(new THREE.BoxGeometry(18, 5, 12), lowStd(0x3a3f78)); body.position.y = 2.5; body.castShadow = true; g.add(body);
       const roof = new THREE.Mesh(new THREE.BoxGeometry(18.6, 0.5, 12.6), lowStd(0x1d2147)); roof.position.y = 5.2; g.add(roof);
-      const wmat = new THREE.MeshBasicMaterial({ color: 0x9db8ff, toneMapped: false }); branchWin.push(wmat);
+      const wmat = bmt(0x9db8ff); branchWin.push(wmat);
       for (let k = 0; k < 4; k++) { const w = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.2), wmat); w.position.set(-6.2 + k * 4.1, 2.6, 6.02); g.add(w); }
-      const door = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 3.2), new THREE.MeshBasicMaterial({ color: 0xffe9a8, toneMapped: false })); door.position.set(0, 1.6, 6.03); g.add(door);
+      const door = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 3.2), bmt(0xffe9a8)); door.position.set(0, 1.6, 6.03); g.add(door);
       const sg3 = new THREE.Mesh(new THREE.PlaneGeometry(10, 1.9), new THREE.MeshBasicMaterial({ map: signTex('RAFLI PS · ' + b.name.split(' ')[1]), toneMapped: false })); sg3.position.set(0, 4.3, 6.05); g.add(sg3);
       const parkL = new THREE.Mesh(new THREE.PlaneGeometry(14, 5), lowStd(0x30333c, { flatShading: false })); parkL.rotation.x = -Math.PI / 2; parkL.position.set(0, 0.03, 10); g.add(parkL);
-      for (let k = 0; k < 4; k++) { const l = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 3.4), new THREE.MeshBasicMaterial({ color: 0xffffff })); l.rotation.x = -Math.PI / 2; l.position.set(-5 + k * 3.3, 0.05, 10); g.add(l); }
+      for (let k = 0; k < 4; k++) { const l = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 3.4), bm(0xffffff)); l.rotation.x = -Math.PI / 2; l.position.set(-5 + k * 3.3, 0.05, 10); g.add(l); }
       const car = makeCar([0xdc2626, 0x2563eb, 0xf59e0b][i % 3]); car.position.set(-3.3 + i * 3.3, 0, 10); car.rotation.y = Math.PI; g.add(car);
       mergeByMaterial(g); branchG.add(g);
     });
@@ -185,5 +188,5 @@ export function buildWorld(scene) {
     return { ...cache, rain: rk };
   }
   mergeByMaterial(stat);
-  return { update, setBranches, driveIn, driveOut, BAYS, LOT, root, vehicles };
+  return { update, setBranches, driveIn, driveOut, BAYS, LOT, root, vehicles, lotLights, setRainDensity(d) { rain.geometry.setDrawRange(0, Math.floor(RN * d) * 2); } };
 }

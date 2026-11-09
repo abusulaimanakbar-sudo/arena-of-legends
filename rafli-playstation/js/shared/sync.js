@@ -27,7 +27,7 @@ export function createLink({ role, onMsg, onStatus }) {
     try { if (typeof BroadcastChannel !== 'undefined') { bc = new BroadcastChannel('rafli-' + room); bc.onmessage = (e) => deliver(e.data); st.local = true; } } catch (e) { /* abaikan */ }
     if (typeof addEventListener === 'function' && !openLocal.bound) { openLocal.bound = true; addEventListener('storage', (e) => { if (e.key && e.key === 'rafli-msg-' + room && e.newValue) deliver(e.newValue); }); st.local = true; }
   }
-  function sendLocal(raw) { try { if (bc) bc.postMessage(raw); } catch (e) { /* abaikan */ } try { if (typeof localStorage !== 'undefined') localStorage.setItem('rafli-msg-' + room, raw); } catch (e) { /* abaikan */ } }
+  function sendLocal(raw, store = true) { try { if (bc) bc.postMessage(raw); } catch (e) { /* abaikan */ } if (store && !bc) { try { if (typeof localStorage !== 'undefined') localStorage.setItem('rafli-msg-' + room, raw); } catch (e) { /* abaikan */ } } }
   // ---- relay: antrean terbatas laju, gabungkan pesan ber-kunci sama ----
   const queue = []; let lastPub = 0, pumping = false;
   async function publishRaw(raw) { const r = await fetch(`${server}/${outTopic()}`, { method: 'POST', body: raw }); if (!r.ok) throw new Error('HTTP ' + r.status); }
@@ -63,7 +63,7 @@ export function createLink({ role, onMsg, onStatus }) {
   const api = {
     configure({ room: r, server: s, remote }) { const changed = r !== room || (s || DEFAULT_SERVER) !== server || remote !== remoteOn; room = r || ''; server = (s || DEFAULT_SERVER).replace(/\/+$/, ''); remoteOn = remote !== false; if (!changed) return; openLocal(); clearTimeout(subTimer); if (abort) abort.abort(); retry = 0; if (room && remoteOn && typeof fetch === 'function') subscribe(); else { st.remote = 'off'; } emit(); },
     // opts.co = kunci penggabungan; opts.remote=false -> hanya lokal
-    send(msg, opts = {}) { if (!room) return false; const m = { ...msg, from: role, u: me, s: ++seq, t: Date.now() }; const raw = JSON.stringify(m); sendLocal(raw); if (opts.remote !== false && remoteOn && typeof fetch === 'function') queueRemote(m, opts.co); return true; },
+    send(msg, opts = {}) { if (!room) return false; const m = { ...msg, from: role, u: me, s: ++seq, t: Date.now() }; const raw = JSON.stringify(m); sendLocal(raw, opts.store !== false); if (opts.remote !== false && remoteOn && typeof fetch === 'function') queueRemote(m, opts.co); return true; },
     status: () => ({ ...st }), get room() { return room; }, get server() { return server; },
     close() { closed = true; if (abort) abort.abort(); clearTimeout(subTimer); if (bc) bc.close(); },
   };

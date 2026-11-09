@@ -21,16 +21,24 @@ export function mergeColored(parts) {
   }
   const out = new THREE.BufferGeometry(); out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); out.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); return out;
 }
-// gabungkan mesh statis dalam grup menjadi satu mesh per material (hemat draw call)
+// gabungkan mesh statis dalam grup. Material Lambert polos (tanpa tekstur/transparan/emisi) digabung jadi SATU mesh dengan warna per-vertex.
+const bakeMat = { 0: new THREE.MeshLambertMaterial({ vertexColors: true }), 1: new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }) };
+const bakeable = (m) => m.isMeshLambertMaterial && !m.map && !m.transparent && !m.vertexColors && m.emissive.getHex() === 0 && m.opacity === 1;
 export function mergeByMaterial(group) {
   group.updateMatrixWorld(true); const inv = group.matrixWorld.clone().invert(); const buckets = new Map(); const rm = [];
-  group.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && !Array.isArray(o.material)) { if (!buckets.has(o.material)) buckets.set(o.material, []); buckets.get(o.material).push(o); rm.push(o); } });
+  group.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && !Array.isArray(o.material) && !o.userData.keep) { const m = o.material; const key = bakeable(m) ? (m.flatShading ? 'bake1' : 'bake0') : m; if (!buckets.has(key)) buckets.set(key, []); buckets.get(key).push(o); rm.push(o); } });
   const out = [];
-  for (const [mat, list] of buckets) {
-    const pos = [], nor = [], uv = [], colr = []; const hasUV = list.every((o) => o.geometry.attributes.uv); const hasC = list.every((o) => o.geometry.attributes.color);
-    for (const o of list) { const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); g.applyMatrix4(inv.clone().multiply(o.matrixWorld)); const p = g.attributes.position.array, n = g.attributes.normal.array; for (let i = 0; i < p.length; i++) { pos.push(p[i]); nor.push(n[i]); } if (hasUV) { const u = g.attributes.uv.array; for (let i = 0; i < u.length; i++) uv.push(u[i]); } if (hasC) { const c = g.attributes.color.array; for (let i = 0; i < c.length; i++) colr.push(c[i]); } g.dispose(); }
-    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); if (hasUV) geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); if (hasC) geo.setAttribute('color', new THREE.Float32BufferAttribute(colr, 3));
-    const mesh = new THREE.Mesh(geo, mat); mesh.matrixAutoUpdate = true; out.push(mesh);
+  for (const [key, list] of buckets) {
+    const bake = typeof key === 'string'; const mat = bake ? bakeMat[key === 'bake1' ? 1 : 0] : key;
+    const pos = [], nor = [], uv = [], colr = []; const hasUV = !bake && list.every((o) => o.geometry.attributes.uv); const hasC = !bake && list.every((o) => o.geometry.attributes.color);
+    for (const o of list) {
+      const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); g.applyMatrix4(inv.clone().multiply(o.matrixWorld)); const p = g.attributes.position.array, n = g.attributes.normal.array;
+      for (let i = 0; i < p.length; i++) { pos.push(p[i]); nor.push(n[i]); }
+      if (bake) { const c = o.material.color; for (let i = 0; i < p.length / 3; i++) colr.push(c.r, c.g, c.b); }
+      if (hasUV) { const u = g.attributes.uv.array; for (let i = 0; i < u.length; i++) uv.push(u[i]); } if (hasC) { const c = g.attributes.color.array; for (let i = 0; i < c.length; i++) colr.push(c[i]); } g.dispose();
+    }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); if (hasUV) geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); if (bake || hasC) geo.setAttribute('color', new THREE.Float32BufferAttribute(colr, 3));
+    out.push(new THREE.Mesh(geo, mat));
   }
   rm.forEach((o) => o.parent && o.parent.remove(o)); out.forEach((o) => group.add(o)); return out;
 }
@@ -47,12 +55,11 @@ export function textSprite(text, color = '#fff', size = 40) {
 
 // ---------- stik ----------
 export function makeController(color = 0xf4f5fa) {
-  const g = new THREE.Group(); const m = std(color, { roughness: 0.35 });
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.035, 0.1, 4, 8), m); body.rotation.z = Math.PI / 2; body.scale.set(1, 1, 0.8); g.add(body);
-  for (const sx of [-1, 1]) { const grip = new THREE.Mesh(new THREE.CapsuleGeometry(0.03, 0.06, 4, 8), m); grip.position.set(sx * 0.085, -0.025, 0.012); grip.rotation.x = 0.35; g.add(grip); }
-  const blk = std(0x14151a, { roughness: 0.4 }); const mid = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.012, 0.05), blk); mid.position.set(0, 0.028, 0); g.add(mid);
-  const bar = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.008, 0.012), new THREE.MeshBasicMaterial({ color: 0x3b82f6, toneMapped: false })); bar.position.set(0, 0.03, -0.035); g.add(bar);
-  return g;
+  const body = new THREE.CapsuleGeometry(0.035, 0.1, 2, 6), grip = new THREE.CapsuleGeometry(0.03, 0.06, 2, 6), mid = new THREE.BoxGeometry(0.09, 0.012, 0.05), bar = new THREE.BoxGeometry(0.1, 0.008, 0.012);
+  const rz = new THREE.Matrix4().makeRotationZ(Math.PI / 2).multiply(new THREE.Matrix4().makeScale(1, 1, 0.8));
+  const parts = [{ g: body, m: rz, c: color }, { g: mid, m: new THREE.Matrix4().makeTranslation(0, 0.028, 0), c: 0x14151a }, { g: bar, m: new THREE.Matrix4().makeTranslation(0, 0.03, -0.035), c: 0x3b82f6 }];
+  for (const sx of [-1, 1]) parts.push({ g: grip, m: new THREE.Matrix4().compose(new THREE.Vector3(sx * 0.085, -0.025, 0.012), new THREE.Quaternion().setFromEuler(new THREE.Euler(0.35, 0, 0)), new THREE.Vector3(1, 1, 1)), c: color });
+  const g = new THREE.Group(); g.add(new THREE.Mesh(mergeColored(parts), vcMat)); return g;
 }
 
 // ---------- konsol (tier 0..4) ----------
@@ -109,6 +116,7 @@ export function makeChair(color = 0x3b82f6) {
 }
 
 // ---------- kendaraan low-poly ----------
+const HEADM = new THREE.MeshBasicMaterial({ color: 0xfff6c8, toneMapped: false }), TAILM = new THREE.MeshBasicMaterial({ color: 0xff2222, toneMapped: false });
 export function makeCar(color = 0xdc2626, kind = 'car') {
   const g = new THREE.Group(); const body = std(color, { roughness: 0.4, metalness: 0.3, flatShading: true }), glass = std(0x1f2937, { roughness: 0.15, metalness: 0.5, flatShading: true }), dark = std(0x111111);
   const tall = kind === 'suv' ? 0.18 : 0;
@@ -117,7 +125,7 @@ export function makeCar(color = 0xdc2626, kind = 'car') {
   const roof = new THREE.Mesh(new THREE.BoxGeometry(1.66, 0.08, 2.0), body); roof.position.set(0, 1.44 + tall * 1.3, -0.15); g.add(roof);
   const hood = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.1, 1.2), body); hood.position.set(0, 0.92 + tall, 1.45); g.add(hood);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.26, 10), dark); w.rotation.z = Math.PI / 2; w.position.set(sx * 0.93, 0.34, sz * 1.3); g.add(w); }
-  for (const sx of [-1, 1]) { const hl = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.14, 0.05), new THREE.MeshBasicMaterial({ color: 0xfff6c8, toneMapped: false })); hl.position.set(sx * 0.62, 0.72 + tall, 2.07); g.add(hl); const tl = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.12, 0.05), new THREE.MeshBasicMaterial({ color: 0xff2222, toneMapped: false })); tl.position.set(sx * 0.62, 0.74 + tall, -2.07); g.add(tl); }
+  for (const sx of [-1, 1]) { const hl = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.14, 0.05), HEADM); hl.position.set(sx * 0.62, 0.72 + tall, 2.07); g.add(hl); const tl = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.12, 0.05), TAILM); tl.position.set(sx * 0.62, 0.74 + tall, -2.07); g.add(tl); }
   mergeByMaterial(g); return g;
 }
 export function makeBike(color = 0x2563eb) {
@@ -127,7 +135,7 @@ export function makeBike(color = 0x2563eb) {
   const front = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.7, 0.3), body); front.position.set(0, 0.7, 0.55); g.add(front);
   const bar = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.05, 0.05), dark); bar.position.set(0, 1.08, 0.5); g.add(bar);
   for (const z of [0.7, -0.75]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.14, 10), dark); w.rotation.z = Math.PI / 2; w.position.set(0, 0.28, z); g.add(w); }
-  const hl = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, 0.04), new THREE.MeshBasicMaterial({ color: 0xfff6c8, toneMapped: false })); hl.position.set(0, 0.95, 0.72); g.add(hl);
+  const hl = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, 0.04), HEADM); hl.position.set(0, 0.95, 0.72); g.add(hl);
   mergeByMaterial(g); return g;
 }
 
@@ -138,7 +146,7 @@ export function makeFood(kind) {
   else if (kind === 'teh' || kind === 'jeruk') { const col = kind === 'teh' ? 0xc2761e : 0xff8a1f; const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.034, 0.13, 10), std(col, { transparent: true, opacity: 0.85, roughness: 0.1 })); glass.position.y = 0.065; const ice = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.03), std(0xffffff, { transparent: true, opacity: 0.7 })); ice.position.set(0, 0.12, 0); const st = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.13, 4), std(0xef4444)); st.position.set(0.015, 0.15, 0); st.rotation.z = 0.2; g.add(glass, ice, st); }
   else if (kind === 'kopi') { const sa = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.01, 12), std(0xf8fafc)); sa.position.y = 0.005; const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.035, 0.06, 12), std(0xf8fafc)); cup.position.y = 0.04; const cf = new THREE.Mesh(new THREE.CylinderGeometry(0.043, 0.043, 0.005, 12), std(0x3b2314)); cf.position.y = 0.068; g.add(sa, cup, cf); }
   else { const pl = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.1, 0.015, 14), std(0xf8fafc)); pl.position.y = 0.008; g.add(pl); for (let i = 0; i < 4; i++) { const fr = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.025, 8), std(0xc98a2b)); fr.position.set(Math.cos(i * 1.6) * 0.05, 0.03 + (i > 2 ? 0.02 : 0), Math.sin(i * 1.6) * 0.05); g.add(fr); } }
-  g.traverse((o) => { if (o.isMesh) o.castShadow = true; }); return g;
+  mergeByMaterial(g); return g;
 }
 
 // ---------- gelembung dialog ----------
@@ -188,38 +196,50 @@ const G = {
   seg: (len, r) => sharedGeo(`seg${len}_${r}`, () => { const g = new THREE.CapsuleGeometry(r, len - r * 2, 2, 6); g.translate(0, -len / 2, 0); return g; }),
   hand: () => sharedGeo('hand', () => new THREE.SphereGeometry(0.045, 6, 5)), shoe: () => sharedGeo('shoe', () => new THREE.BoxGeometry(0.1, 0.07, 0.22)),
 };
+// ===== Orang: kerangka (Group) tanpa mesh; tampilan digambar lewat InstancedMesh bersama (hanya ±18 draw call untuk SEMUA orang) =====
+const I4 = new THREE.Matrix4();
+const PART_DEFS = [ // [mesh, node, geometri, offset, peran-warna, syarat]
+  ['torso', 'hips', () => G.torso(), T4(0, 0.3, 0, 1.05, 1, 0.8), 'shirt'], ['pelvis', 'hips', () => G.pelvis(), T4(0, 0.02, 0), 'pants'], ['neck', 'hips', () => G.neck(), T4(0, 0.62, 0), 'skin'],
+  ['skull', 'head', () => G.skull(), T4(0, 0, 0, 0.95, 1.08, 1), 'skin'], ['hair', 'head', () => G.hair(), T4(0, 0.02, 0, 1, 1, 1, -0.15), 'hair'], ['pony', 'head', () => G.pony(), T4(0, -0.02, -0.17, 1, 1, 1, 0.4), 'hair', 'girl'],
+  ['capTop', 'head', () => G.capTop(), T4(0, 0.11, 0), 'cap', 'cap'], ['capBill', 'head', () => G.capBill(), T4(0, 0.085, 0.16), 'cap', 'cap'], ['band', 'head', () => G.band(), T4(0, 0.02, 0), 'band', 'headset'],
+  ['cup', 'head', () => G.cup(), new THREE.Matrix4().makeTranslation(-0.16, 0, 0).multiply(new THREE.Matrix4().makeRotationZ(Math.PI / 2)), 'cups', 'headset'], ['cup', 'head', () => G.cup(), new THREE.Matrix4().makeTranslation(0.16, 0, 0).multiply(new THREE.Matrix4().makeRotationZ(Math.PI / 2)), 'cups', 'headset'],
+  ['apron', 'hips', () => G.apron(), T4(0, 0.28, 0.14), 'apronC', 'apron'], ['bag', 'hips', () => G.bag(), T4(0, 0.3, -0.18), 'bagC', 'bag'],
+  ['up', 'upL', () => G.seg(0.28, 0.05), I4, 'shirt'], ['up', 'upR', () => G.seg(0.28, 0.05), I4, 'shirt'], ['fo', 'foL', () => G.seg(0.26, 0.042), I4, 'skin'], ['fo', 'foR', () => G.seg(0.26, 0.042), I4, 'skin'],
+  ['hand', 'foL', () => G.hand(), T4(0, -0.28, 0), 'skin'], ['hand', 'foR', () => G.hand(), T4(0, -0.28, 0), 'skin'],
+  ['th', 'thL', () => G.seg(0.45, 0.075), I4, 'pants'], ['th', 'thR', () => G.seg(0.45, 0.075), I4, 'pants'], ['sn', 'snL', () => G.seg(0.44, 0.06), I4, 'pants'], ['sn', 'snR', () => G.seg(0.44, 0.06), I4, 'pants'],
+  ['shoe', 'snL', () => G.shoe(), T4(0, -0.45, 0.05), 'shoe'], ['shoe', 'snR', () => G.shoe(), T4(0, -0.45, 0.05), 'shoe'],
+];
+const peopleReg = []; let peopleMeshes = null; const _pm = new THREE.Matrix4(); const PCAP = 96;
+export function initPeople(scene) {
+  if (peopleMeshes) return; peopleMeshes = {}; const mat = new THREE.MeshLambertMaterial({ color: 0xffffff }); const per = {};
+  for (const d of PART_DEFS) per[d[0]] = (per[d[0]] || 0) + 1;
+  for (const [name, n] of Object.entries(per)) { const geo = PART_DEFS.find((d) => d[0] === name)[2](); const m = new THREE.InstancedMesh(geo, mat, PCAP * n); m.count = 0; m.frustumCulled = false; m.castShadow = false; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(m); peopleMeshes[name] = m; }
+}
+export function syncPeople() {
+  if (!peopleMeshes) return; for (let i = peopleReg.length - 1; i >= 0; i--) if (!peopleReg[i].parent) peopleReg.splice(i, 1);
+  const cnt = {}; for (const k in peopleMeshes) cnt[k] = 0;
+  for (const p of peopleReg) {
+    if (!p.visible) continue; p.updateMatrixWorld(true); const u = p.userData, nd = u.nodes;
+    for (const d of PART_DEFS) { if (d[5] && !u.flags[d[5]]) continue; const mesh = peopleMeshes[d[0]]; const k = cnt[d[0]]; if (k >= mesh.instanceMatrix.count) continue; _pm.multiplyMatrices(nd[d[1]].matrixWorld, d[3]); mesh.setMatrixAt(k, _pm); mesh.setColorAt(k, u.col[d[4]]); cnt[d[0]] = k + 1; }
+  }
+  for (const k in peopleMeshes) { const m = peopleMeshes[k]; m.count = cnt[k]; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
+}
 export function makePerson(opt = {}) {
   const root = new THREE.Group(); const kind = opt.kind || 'cust';
-  const skinC = opt.skin ?? pick(SKIN), shirtC = opt.shirt ?? pick(SHIRTS), pantsC = opt.pants ?? pick(PANTS), girl = opt.girl ?? Math.random() < 0.35, hairC = opt.hair ?? pick([0x111111, 0x2b1b12, 0x3b2314, 0x0a0a0a, 0x5b3a1e]), shoeC = pick([0xf8fafc, 0x111827, 0xdc2626]);
+  const girl = opt.girl ?? Math.random() < 0.35;
+  const col = { skin: new THREE.Color(opt.skin ?? pick(SKIN)), shirt: new THREE.Color(opt.shirt ?? pick(SHIRTS)), pants: new THREE.Color(opt.pants ?? pick(PANTS)), hair: new THREE.Color(opt.hair ?? pick([0x111111, 0x2b1b12, 0x3b2314, 0x0a0a0a, 0x5b3a1e])), shoe: new THREE.Color(pick([0xf8fafc, 0x111827, 0xdc2626])), cap: new THREE.Color(pick([0x111827, 0xdc2626, 0x2563eb])), band: new THREE.Color(0x111111), cups: new THREE.Color(0xef4444), apronC: new THREE.Color(0x111827), bagC: new THREE.Color(pick([0x2563eb, 0xdc2626, 0x16a34a])) };
+  const flags = { girl, cap: !!(opt.cap ?? (kind === 'cust' && !girl && Math.random() < 0.3)), headset: !!opt.headset, apron: !!opt.apron, bag: !!opt.bag };
   const hips = new THREE.Group(); hips.position.y = 0.9; root.add(hips);
-  // badan: torso + pinggul + leher (+celemek/tas) = 1 mesh
-  const body = [{ g: G.torso(), m: T4(0, 0.3, 0, 1.05, 1, 0.8), c: shirtC }, { g: G.pelvis(), m: T4(0, 0.02, 0), c: pantsC }, { g: G.neck(), m: T4(0, 0.62, 0), c: skinC }];
-  if (opt.apron) body.push({ g: G.apron(), m: T4(0, 0.28, 0.14), c: 0x111827 }); if (opt.bag) body.push({ g: G.bag(), m: T4(0, 0.3, -0.18), c: pick([0x2563eb, 0xdc2626, 0x16a34a]) });
-  hips.add(new THREE.Mesh(mergeColored(body), vcMat));
-  // kepala: tengkorak + rambut + topi/headset = 1 mesh
   const head = new THREE.Group(); head.position.y = 0.76; hips.add(head);
-  const hp = [{ g: G.skull(), m: T4(0, 0, 0, 0.95, 1.08, 1), c: skinC }, { g: G.hair(), m: T4(0, 0.02, 0, 1, 1, 1, -0.15), c: hairC }];
-  if (girl) hp.push({ g: G.pony(), m: T4(0, -0.02, -0.17, 1, 1, 1, 0.4), c: hairC });
-  if (opt.cap ?? (kind === 'cust' && !girl && Math.random() < 0.3)) { const cc = pick([0x111827, 0xdc2626, 0x2563eb]); hp.push({ g: G.capTop(), m: T4(0, 0.11, 0), c: cc }, { g: G.capBill(), m: T4(0, 0.085, 0.16), c: cc }); }
-  if (opt.headset) { hp.push({ g: G.band(), m: T4(0, 0.02, 0), c: 0x111111 }); for (const sx of [-1, 1]) { const m = T4(sx * 0.16, 0, 0); m.multiply(new THREE.Matrix4().makeRotationZ(Math.PI / 2)); hp.push({ g: G.cup(), m, c: 0xef4444 }); } }
-  head.add(new THREE.Mesh(mergeColored(hp), vcMat));
-  // lengan: lengan atas (baju) + lengan bawah & tangan (kulit)
-  const shirtM = std(shirtC), pantsM = std(pantsC);
-  const arms = [];
-  for (const sx of [-1, 1]) {
-    const up = new THREE.Group(); up.position.set(sx * 0.22, 0.52, 0); hips.add(up); up.add(new THREE.Mesh(G.seg(0.28, 0.05), shirtM));
-    const fo = new THREE.Group(); fo.position.y = -0.28; up.add(fo); fo.add(new THREE.Mesh(mergeColored([{ g: G.seg(0.26, 0.042), m: null, c: skinC }, { g: G.hand(), m: T4(0, -0.28, 0), c: skinC }]), vcMat));
-    arms.push({ up, fo, hand: null });
+  const arms = [], legs = [], nodes = { hips, head };
+  for (const [sx, sn] of [[-1, 'L'], [1, 'R']]) {
+    const up = new THREE.Group(); up.position.set(sx * 0.22, 0.52, 0); hips.add(up); const fo = new THREE.Group(); fo.position.y = -0.28; up.add(fo); arms.push({ up, fo, hand: null }); nodes['up' + sn] = up; nodes['fo' + sn] = fo;
   }
-  const legs = [];
-  for (const sx of [-1, 1]) {
-    const th = new THREE.Group(); th.position.set(sx * 0.09, -0.02, 0); hips.add(th); th.add(new THREE.Mesh(G.seg(0.45, 0.075), pantsM));
-    const sn = new THREE.Group(); sn.position.y = -0.45; th.add(sn); sn.add(new THREE.Mesh(mergeColored([{ g: G.seg(0.44, 0.06), m: null, c: pantsC }, { g: G.shoe(), m: T4(0, -0.45, 0.05), c: shoeC }]), vcMat));
-    legs.push({ th, sn });
+  for (const [sx, sn] of [[-1, 'L'], [1, 'R']]) {
+    const th = new THREE.Group(); th.position.set(sx * 0.09, -0.02, 0); hips.add(th); const sh = new THREE.Group(); sh.position.y = -0.45; th.add(sh); legs.push({ th, sn: sh }); nodes['th' + sn] = th; nodes['sn' + sn] = sh;
   }
-  root.traverse((o) => { if (o.isMesh) o.castShadow = kind === 'staff' ? true : false; });
-  root.userData = { hips, head, arms, legs, phase: Math.random() * 6, controller: null, pose: 'stand' };
-  return root;
+  root.userData = { hips, head, arms, legs, phase: Math.random() * 6, controller: null, pose: 'stand', nodes, col, flags, isPerson: true };
+  peopleReg.push(root); return root;
 }
 
 export function attachController(p, color) {
